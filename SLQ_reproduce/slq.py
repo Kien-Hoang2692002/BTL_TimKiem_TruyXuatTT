@@ -147,8 +147,28 @@ def collate(batch):
     return torch.stack([b[0] for b in batch]), [b[1] for b in batch]
 
 
+def find_coco(coco_root):
+    """Tìm captions_train2017.json và thư mục train2017 (Kaggle mount mỗi dataset một kiểu đường dẫn)."""
+    ann_path = img_dir = None
+    for base in [coco_root, "/kaggle/input"]:
+        if not base or not os.path.isdir(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            if ann_path is None and "captions_train2017.json" in files:
+                ann_path = os.path.join(root, "captions_train2017.json")
+            if img_dir is None and os.path.basename(root) == "train2017" and any(f.endswith(".jpg") for f in files[:50]):
+                img_dir = root
+            if ann_path and img_dir:
+                return ann_path, img_dir
+    raise FileNotFoundError(
+        f"Không tìm thấy COCO (annotations={ann_path}, train2017={img_dir}). "
+        "Hãy Add Input -> tab Datasets -> 'awsaf49/coco-2017-dataset' (dataset, không phải notebook).")
+
+
 def load_coco_train_pairs(coco_root, max_pairs, seed):
-    ann = json.load(open(os.path.join(coco_root, "annotations", "captions_train2017.json")))
+    ann_path, img_dir = find_coco(coco_root)
+    print("COCO annotations:", ann_path, "| ảnh:", img_dir)
+    ann = json.load(open(ann_path))
     id2file = {im["id"]: im["file_name"] for im in ann["images"]}
     random.Random(seed).shuffle(ann["annotations"])
     seen, pairs = set(), []
@@ -157,7 +177,7 @@ def load_coco_train_pairs(coco_root, max_pairs, seed):
         if a["image_id"] in seen:
             continue
         seen.add(a["image_id"])
-        pairs.append((os.path.join("train2017", id2file[a["image_id"]]), a["caption"].strip()))
+        pairs.append((os.path.join(img_dir, id2file[a["image_id"]]), a["caption"].strip()))
         if max_pairs and len(pairs) >= max_pairs:
             break
     return pairs
@@ -197,7 +217,7 @@ def train(args):
 
     pairs = load_coco_train_pairs(args.coco_root, args.max_pairs, args.seed)
     print(f"Số cặp huấn luyện: {len(pairs)}")
-    dl = DataLoader(PairDataset(pairs, args.coco_root), batch_size=args.batch_size, shuffle=True,
+    dl = DataLoader(PairDataset(pairs), batch_size=args.batch_size, shuffle=True,
                     num_workers=args.workers, collate_fn=collate, drop_last=True, pin_memory=torch.cuda.is_available())
 
     params = [model.meta_queries, model.logit_scale]
