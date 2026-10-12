@@ -9,7 +9,7 @@ Bám sát code gốc https://github.com/CnFaker/SLQ (train/train_internvl_slq.py
   - Backbone đóng băng hoàn toàn, chỉ học meta_queries và logit_scale
 
 Thay đổi so với code gốc (để chạy được trên GPU nhỏ):
-  - fp16 + gradient checkpointing thay vì bf16 + flash-attn; batch nhỏ hơn (mặc định 64 thay vì 1024)
+  - bf16 trên GPU Ampere+, fp32 trên T4/P100 (fp16 gây NaN); không flash-attn; gradient checkpointing; batch nhỏ hơn
   - Gọi thẳng Qwen2Model (bỏ lm_head) để không tốn bộ nhớ tính logits trên 151k từ vựng
   - Sửa lỗi code gốc: dòng tạo meta_queries bị comment, mặc định N=1 -> dùng N=20 như bài báo
 
@@ -70,7 +70,12 @@ class SLQEncoder(nn.Module):
     def __init__(self, num_queries=20, device=None, dtype=None):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        dtype = dtype or (torch.float16 if device == "cuda" else torch.float32)
+        if dtype is None:
+            # fp16 làm InternViT/Qwen2 tràn số -> NaN (kết quả ngang đoán ngẫu nhiên).
+            # GPU Ampere+ (A100, L4, RTX30xx...) dùng bf16 như bài báo; T4/P100 dùng fp32.
+            native_bf16 = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            dtype = torch.bfloat16 if native_bf16 else torch.float32
+        print("dtype:", dtype)
         from transformers import AutoModel, AutoTokenizer
 
         self.device, self.dtype = device, dtype
@@ -226,24 +231,21 @@ def train(args):
     warm = max(1, int(0.03 * total))
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total - warm))))
-    cuda = model.device == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=cuda)
 
     step, t0 = 0, time.time()
     for ep in range(args.epochs):
         for pixels, caps in dl:
-            with torch.autocast("cuda", dtype=torch.float16, enabled=cuda):
-                zi = model.encode_image(pixels)
-                zt = model.encode_text(caps)
+            zi = model.encode_image(pixels)
+            zt = model.encode_text(caps)
+            if not torch.isfinite(zi).all() or not torch.isfinite(zt).all():
+                raise RuntimeError("Embedding bị NaN/Inf - dừng huấn luyện")
             logits = zi @ zt.t() / model.logit_scale.clamp(min=0.01)
             labels = torch.arange(len(zi), device=zi.device)
             loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
             opt.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.unscale_(opt)
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(params, 1.0)
-            scaler.step(opt)
-            scaler.update()
+            opt.step()
             sched.step()
             step += 1
             if step % 10 == 0 or step == 1:
@@ -264,7 +266,7 @@ def embed_all(model, items, kind, bs):
     out = []
     for i in range(0, len(items), bs):
         chunk = items[i:i + bs]
-        with torch.autocast("cuda", dtype=torch.float16, enabled=model.device == "cuda"):
+        if True:
             if kind == "text":
                 out.append(model.encode_text(chunk).cpu())
             else:
@@ -272,7 +274,11 @@ def embed_all(model, items, kind, bs):
                 out.append(model.encode_image(torch.stack([preprocess_image(im) for im in imgs])).cpu())
         print(f"\r  {kind}: {min(i + bs, len(items))}/{len(items)}", end="", flush=True)
     print()
-    return torch.cat(out)
+    out = torch.cat(out)
+    bad = (~torch.isfinite(out)).any(1).sum().item()
+    if bad:
+        raise RuntimeError(f"{bad}/{len(out)} embedding {kind} bị NaN/Inf - kết quả sẽ vô nghĩa")
+    return out
 
 
 def recall(scores, positive, ks=(1, 5, 10)):
