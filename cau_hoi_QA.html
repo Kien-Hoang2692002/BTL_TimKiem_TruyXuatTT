@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hỏi đáp SLQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f7fb; --surface:#ffffff; --fg:#161a2b; --mute:#5d6584; --line:#e3e6f0;
+  --accent:#6a3df0; --accent2:#0aa5c2; --pink:#d6337f; --quote:#f1effd;
+  --font:"Be Vietnam Pro",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a0c16; --surface:#121528; --fg:#e7eaf7; --mute:#97a0c4; --line:#242a45;
+  --accent:#a585ff; --accent2:#3ee6ff; --pink:#ff6fb5; --quote:#191c34; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a0c16; --surface:#121528; --fg:#e7eaf7; --mute:#97a0c4; --line:#242a45;
+  --accent:#a585ff; --accent2:#3ee6ff; --pink:#ff6fb5; --quote:#191c34; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 var(--font);-webkit-font-smoothing:antialiased}
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:800;letter-spacing:-.01em}
+.brand span{background:linear-gradient(100deg,var(--accent2),var(--accent),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.nav{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.nav a{font:600 13px var(--font);color:var(--mute);text-decoration:none;padding:6px 12px;border-radius:99px;border:1px solid var(--line)}
+.nav a:hover,.nav a:focus-visible{color:var(--fg);border-color:var(--accent);outline:none}
+.nav a.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent),var(--pink));z-index:6}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:28px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px}
+aside{position:sticky;top:76px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;font-size:13.5px}
+aside .lbl{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+aside a{display:block;padding:5px 10px;border-left:2px solid var(--line);color:var(--mute);text-decoration:none;line-height:1.4}
+aside a:hover{color:var(--fg)}
+aside a.on{border-color:var(--accent);color:var(--fg);font-weight:600}
+main{min-width:0}
+h1{font-size:clamp(28px,4vw,42px);line-height:1.15;letter-spacing:-.02em;margin:0 0 10px;text-wrap:balance}
+h2{font-size:22px;line-height:1.3;margin:0 0 12px;text-wrap:balance}
+h3{font-size:17px;margin:18px 0 6px}
+p{margin:8px 0}
+a{color:var(--accent)}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:4px 0}
+code{font:13.5px var(--mono);background:var(--quote);padding:1px 6px;border-radius:6px}
+hr{display:none}
+blockquote{margin:12px 0;padding:12px 16px;background:var(--quote);border-left:3px solid var(--accent);border-radius:0 12px 12px 0}
+blockquote p{margin:6px 0}
+.intro{color:var(--mute)}
+.intro ul{list-style:none;padding:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:18px 0;transition:border-color .2s}
+.card:target{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mute);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em}
+.chip{display:inline-block;font:600 12px var(--mono);padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--accent2) 15%,transparent);color:var(--accent2);margin-left:8px;vertical-align:middle}
+.num{font:600 12px var(--mono);color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:2px}
+/* Q&A */
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 4px}
+.tools button{font:600 13px var(--font);background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:7px 14px;cursor:pointer}
+.tools button:hover,.tools button:focus-visible{border-color:var(--accent);outline:none}
+.tools button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+details{border:1px solid var(--line);border-radius:14px;background:var(--surface);margin:10px 0;overflow:hidden}
+details[hidden]{display:none}
+summary{cursor:pointer;list-style:none;padding:14px 18px;font-weight:600;display:flex;gap:12px;align-items:flex-start}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--quote);color:var(--accent);font:700 15px var(--mono);margin-top:2px;transition:transform .2s}
+details[open] summary::before{content:"−"}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ans{padding:0 18px 14px 52px;border-top:1px dashed var(--line)}
+.sec{margin-top:34px}
+.sec>h2{display:flex;align-items:center;gap:10px}
+.count{font:600 12px var(--mono);color:var(--mute)}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}aside{display:none}.ans{padding-left:18px}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style></head><body>
+<div id="bar"></div>
+<header class="top"><div class="in">
+ <div class="brand"><span>SLQ</span> · Nhóm báo cáo</div>
+ <nav class="nav">
+  <a href="bao_cao_SLQ.html">Slide</a>
+  <a href="kich_ban_thuyet_trinh.html" >Kịch bản</a>
+  <a href="cau_hoi_QA.html" class="on">Hỏi đáp</a>
+ </nav>
+</div></header>
+<div class="wrap"><aside><div class="lbl">Mục lục</div><a href="#g0">A. Hiểu bài báo</a><a href="#g1">B. Liên hệ môn học</a><a href="#g2">C. Phần tái hiện</a><a href="#g3">D. Đánh giá phản biện</a><a href="#g4">E. Câu hỏi "bẫy" thường gặp</a></aside><main>
+<h1>Bộ câu hỏi hỏi đáp dự kiến: SLQ</h1><div class="intro"><p>Câu hỏi được chia theo chủ đề. Mỗi câu có một <strong>câu trả lời gợi ý</strong>: nói ngắn gọn trước, cô hỏi sâu thì giải thích thêm.</p>
+<p>Mức độ: ⭐ cơ bản · ⭐⭐ trung bình · ⭐⭐⭐ khó hoặc dễ bị hỏi vặn.</p></div>
+<div class="tools"><button data-lv="all" class="on">Tất cả</button><button data-lv="1">⭐ Cơ bản</button><button data-lv="2">⭐⭐ Trung bình</button><button data-lv="3">⭐⭐⭐ Khó</button><button id="openAll">Mở hết đáp án</button><button id="closeAll">Đóng hết</button></div>
+<section class="sec" id="g0"><h2>A. Hiểu bài báo<span class="count">11 câu</span></h2><details id="q1" data-lv="1"><summary><span><ol>
+<li>⭐ Bài báo giải quyết vấn đề gì? Đóng góp chính là gì?</li>
+</ol></span></summary><div class="ans"><p>Bài báo giải quyết bài toán biến MLLM thành công cụ truy xuất ảnh–văn bản mà <strong>không phải fine-tune</strong>, tránh được chi phí lớn và tránh việc mô hình quên kiến thức cũ. Có ba đóng góp:</p>
+<ol>
+<li>Phương pháp SLQ: học vài chục đến vài trăm nghìn tham số dưới dạng các vector query dùng chung.</li>
+<li>Benchmark KARR-Bench để đánh giá truy xuất cần suy luận.</li>
+<li>Kết quả tốt hơn LoRA và fine-tune toàn bộ trên COCO và Flickr30K, trong khi vẫn giữ được năng lực trả lời câu hỏi về ảnh (VQA).</li>
+</ol></div></details><details id="q2" data-lv="1"><summary><span><ol start="2">
+<li>⭐ "Latent query" là gì? Khác gì với token thường?</li>
+</ol></span></summary><div class="ans"><p>Đó là một vector có thể học được, cùng số chiều với embedding của token (896 chiều với InternVL3-1B). Token thường được lấy từ bảng từ vựng. Latent query thì không ứng với từ nào; nó là tham số tự do, được tối ưu trực tiếp bằng gradient. Ta đưa nó vào mô hình như một token, và nó đóng vai trò "câu hỏi" để thu thập thông tin từ phần đầu vào.</p></div></details><details id="q3" data-lv="2"><summary><span><ol start="3">
+<li>⭐⭐ "Shared" nghĩa là gì? Tại sao phải dùng chung?</li>
+</ol></span></summary><div class="ans"><p><strong>Cùng một bộ 20 query</strong> được gắn vào cả chuỗi ảnh lẫn chuỗi văn bản. Dùng chung buộc hai phương thức đi qua cùng một "cổng" để tạo embedding, nên dễ rơi vào cùng một không gian. Ablation trong bài báo: dùng query riêng cho từng phương thức đạt 83,2 / 72,5, thấp hơn SLQ (84,9 / 74,3), dù có gấp đôi tham số.</p></div></details><details id="q4" data-lv="2"><summary><span><ol start="4">
+<li>⭐⭐ Tại sao query phải đặt ở cuối chuỗi mà không đặt ở đầu?</li>
+</ol></span></summary><div class="ans"><p>MLLM là decoder-only, dùng <strong>causal attention</strong>: token thứ i chỉ nhìn được các token 1 đến i. Query đặt ở cuối thì nhìn được toàn bộ ảnh hoặc văn bản, nên tổng hợp được thông tin. Đặt ở đầu (như prompt tuning) thì query không thấy nội dung phía sau. Bài báo cho thấy prompt tuning chỉ đạt 82,2 / 69,7, so với 84,9 / 74,3 của SLQ.</p></div></details><details id="q5" data-lv="2"><summary><span><ol start="5">
+<li>⭐⭐ Vì sao dùng mean pooling? Tại sao không lấy query cuối cùng?</li>
+</ol></span></summary><div class="ans"><p>Query cuối cùng nhìn được nhiều nhất, nhưng dồn hết vào một vector thì lại quay về nút thắt thông tin của cách "last token". Mean pooling cân bằng thông tin từ cả 20 vị trí. Ablation trong bài báo: Mean 84,9 / 74,3, Last 84,4 / 74,1, Max 84,1 / 73,8.</p></div></details><details id="q6" data-lv="2"><summary><span><ol start="6">
+<li>⭐⭐ Giải thích hàm loss InfoNCE. Nhiệt độ τ có vai trò gì?</li>
+</ol></span></summary><div class="ans"><p>Trong một batch B cặp ảnh–caption, với mỗi ảnh, ta coi caption đúng là lớp đúng và B−1 caption còn lại là mẫu âm, rồi tính softmax và cross-entropy. Làm cả hai chiều I→T và T→I rồi lấy trung bình.</p>
+<p>τ chia vào độ tương đồng trước softmax. τ nhỏ làm phân phối nhọn hơn, phạt mạnh các mẫu âm khó. Trong lần chạy của nhóm, τ tự học từ 0,07 xuống 0,021.</p></div></details><details id="q7" data-lv="2"><summary><span><ol start="7">
+<li>⭐⭐ Batch size ảnh hưởng thế nào đến học tương phản?</li>
+</ol></span></summary><div class="ans"><p>Mẫu âm lấy từ chính các mẫu khác trong batch (in-batch negatives). Batch lớn thì có nhiều mẫu âm hơn, việc học khó hơn và hiệu quả hơn. Đây là lý do tác giả dùng batch 1024. Nhóm dùng 64 nên số mẫu âm ít hơn 16 lần; đây là một nguyên nhân khiến kết quả thấp hơn bài báo.</p></div></details><details id="q8" data-lv="2"><summary><span><ol start="8">
+<li>⭐⭐ SLQ khác gì Q-Former của BLIP-2?</li>
+</ol></span></summary><div class="ans"><p>Q-Former là một <strong>module transformer riêng</strong>, có cross-attention và hàng trăm triệu tham số, đặt giữa bộ mã hóa ảnh và LLM. SLQ <strong>không thêm module nào</strong>: query đi thẳng vào MLLM và dùng chính attention có sẵn của mô hình. Số tham số chỉ là N × D.</p></div></details><details id="q9" data-lv="2"><summary><span><ol start="9">
+<li>⭐⭐ SLQ khác gì LoRA?</li>
+</ol></span></summary><div class="ans"><p>LoRA thêm ma trận hạng thấp vào các lớp tuyến tính, nên <strong>thay đổi cách mô hình tính toán</strong> ở mọi lớp (8,7 đến 20 triệu tham số). SLQ không đụng vào trọng số nào; nó chỉ thay đổi <strong>đầu vào</strong>. Vì vậy SLQ giữ nguyên năng lực gốc. Bài báo còn cho thấy tăng rank LoRA từ 4 lên 32 thì kết quả <strong>giảm</strong> (84,5 → 82,1), nghĩa là càng sửa nhiều trọng số thì càng hại.</p></div></details><details id="q10" data-lv="1"><summary><span><ol start="10">
+<li>⭐ KARR-Bench là gì? Vì sao cần nó?</li>
+</ol></span></summary><div class="ans"><p>Đây là benchmark gồm 2.915 cặp, viết lại caption COCO thành dạng câu đố cần tri thức hoặc suy luận, và cấm nêu tên vật thể. Ví dụ "con vật có (2+7) mạng" là con mèo. Benchmark này cần thiết vì COCO và Flickr chỉ kiểm tra khả năng khớp bề mặt, không đánh giá được năng lực suy luận vốn là thế mạnh của MLLM.</p></div></details><details id="q11" data-lv="3"><summary><span><ol start="11">
+<li>⭐⭐⭐ Benchmark do GPT sinh ra thì có thiên vị (bias) không?</li>
+</ol></span></summary><div class="ans"><p>Có rủi ro đó. Tác giả giảm bớt bằng ba cách:</p>
+<ol>
+<li>4 người kiểm duyệt chéo, chỉ giữ lại 60–70% số mẫu.</li>
+<li>Chia đều 6 loại suy luận.</li>
+<li>Kiểm tra độ tương đồng với caption gốc, trung bình 0,46.</li>
+</ol>
+<p>Tuy vậy, các mô hình có tri thức giống GPT vẫn có thể được lợi. Đây là một điểm có thể phản biện.</p></div></details></section>
+<section class="sec" id="g1"><h2>B. Liên hệ môn học<span class="count">5 câu</span></h2><details id="q12" data-lv="1"><summary><span><ol start="12">
+<li>⭐ SLQ thuộc loại mô hình truy xuất nào trong môn học?</li>
+</ol></span></summary><div class="ans"><p>SLQ là <strong>dense retrieval</strong> theo kiểu <strong>bi-encoder</strong>: truy vấn và tài liệu được mã hóa <strong>độc lập</strong> thành vector, rồi xếp hạng theo cosine. Cách này tương tự mô hình không gian vector, nhưng vector là embedding học được chứ không phải TF-IDF.</p></div></details><details id="q13" data-lv="2"><summary><span><ol start="13">
+<li>⭐⭐ Vì sao bi-encoder phù hợp với tìm kiếm quy mô lớn?</li>
+</ol></span></summary><div class="ans"><p>Vì embedding của toàn bộ kho ảnh được <strong>tính trước một lần</strong> rồi lập chỉ mục bằng công cụ tìm kiếm láng giềng gần đúng (ANN), ví dụ FAISS. Khi có truy vấn, chỉ cần mã hóa truy vấn rồi tìm vector gần nhất.</p>
+<p>Cross-encoder đưa cặp truy vấn–tài liệu vào mô hình cùng lúc nên chính xác hơn, nhưng phải chạy mô hình cho <strong>từng cặp</strong>, không mở rộng được cho kho lớn.</p></div></details><details id="q14" data-lv="1"><summary><span><ol start="14">
+<li>⭐ Recall@K là gì? Vì sao bài báo dùng Recall mà không dùng Precision?</li>
+</ol></span></summary><div class="ans"><p>Recall@K là tỷ lệ truy vấn có ít nhất một kết quả đúng nằm trong top-K. Mỗi truy vấn chỉ có một đáp án đúng (Text→Image), hoặc 5 caption đúng (Image→Text), nên điều quan trọng là đáp án có xuất hiện trong top-K hay không. Đây là thước đo chuẩn của các benchmark này, giúp so sánh trực tiếp với CLIP, BLIP và các mô hình khác.</p></div></details><details id="q15" data-lv="2"><summary><span><ol start="15">
+<li>⭐⭐ Tại sao Image→Text thường cao hơn Text→Image?</li>
+</ol></span></summary><div class="ans"><p>Mỗi ảnh có <strong>5 caption đúng</strong>; chỉ cần 1 trong 5 lọt vào top-K là tính đúng. Còn mỗi caption chỉ có <strong>1 ảnh đúng</strong>. Ngoài ra, Image→Text tìm trong 5000 caption còn Text→Image tìm trong 1000 ảnh (Flickr), nên hai chiều không hoàn toàn đối xứng.</p></div></details><details id="q16" data-lv="2"><summary><span><ol start="16">
+<li>⭐⭐ Có thể dùng thêm MRR hay nDCG không?</li>
+</ol></span></summary><div class="ans"><p>Có. Với chỉ một đáp án đúng, MRR (Mean Reciprocal Rank) phản ánh vị trí trung bình của đáp án. Nhóm đã lưu toàn bộ ma trận điểm nên tính thêm được dễ dàng. Nhóm dùng Recall@K để so sánh trực tiếp với bài báo.</p></div></details></section>
+<section class="sec" id="g2"><h2>C. Phần tái hiện<span class="count">13 câu</span></h2><details id="q17" data-lv="1"><summary><span><ol start="17">
+<li>⭐ Nhóm đã làm gì cụ thể?</li>
+</ol></span></summary><div class="ans"><ol>
+<li>Đọc và phân tích bài báo.</li>
+<li>Sửa code gốc vì không chạy được.</li>
+<li>Huấn luyện 20 query trên 20 nghìn cặp COCO bằng GPU T4 của Kaggle, mất 155 phút.</li>
+<li>Đánh giá zero-shot và sau huấn luyện trên Flickr30K-1K và COCO-5K.</li>
+<li>So sánh với bài báo và với CLIP.</li>
+</ol></div></details><details id="q18" data-lv="2"><summary><span><ol start="18">
+<li>⭐⭐ Code gốc có vấn đề gì?</li>
+</ol></span></summary><div class="ans"><ul>
+<li>Import package <code>internvl3</code> nhưng repo không có.</li>
+<li>Dòng tạo <code>meta_queries</code> bị comment, nên chạy là báo lỗi.</li>
+<li>Mặc định 1 query và learning rate 1e-5, trong khi bài báo dùng 20 query và 5e-4.</li>
+<li>Không công bố checkpoint; các đường dẫn để trống.</li>
+</ul>
+<p>Nhóm viết lại một script độc lập, giữ đúng tiền xử lý ảnh, prompt, vị trí query, mean pooling và loss.</p></div></details><details id="q19" data-lv="3"><summary><span><ol start="19">
+<li>⭐⭐⭐ Làm sao chắc script của nhóm đúng với phương pháp gốc, không phải "chế" ra?</li>
+</ol></span></summary><div class="ans"><ul>
+<li>So từng bước với <code>train_internvl_slq.py</code> và <code>eval_internvl_on_coco.py</code>: pad ảnh thành hình vuông màu xám 127, resize 448, 256 token ảnh, cùng template prompt, query gắn cuối, mean pooling, loss chia cho <code>logit_scale</code> khởi tạo 0,07.</li>
+<li>Chỗ khác duy nhất là phần kỹ thuật để chạy được trên T4: fp32, gradient checkpointing, batch nhỏ.</li>
+<li>Kết quả đạt 83–97% bài báo. Nếu sai phương pháp thì khó đạt mức này.</li>
+</ul></div></details><details id="q20" data-lv="3"><summary><span><ol start="20">
+<li>⭐⭐⭐ Vì sao lần chạy đầu ra 0,1%? Làm sao phát hiện?</li>
+</ol></span></summary><div class="ans"><p>Kết quả 0,1% đúng bằng mức đoán ngẫu nhiên (1/1000), và Image→Text ra <strong>giống hệt nhau</strong> trước và sau huấn luyện. Điều đó cho thấy embedding bị hỏng chứ không phải do học kém. Khi chạy thử trên CPU với fp32, kết quả bình thường. Chuyển sang fp32 trên GPU thì hết lỗi.</p>
+<p>Nhóm chưa tái hiện được NaN khi chạy fp16 trên CPU, nên nguyên nhân chính xác (có thể là tràn số trên nhân CUDA fp16 của T4) <strong>chưa được chứng minh hoàn toàn</strong>. Nhóm đã thêm bước kiểm tra NaN tự động vào code.</p></div></details><details id="q21" data-lv="2"><summary><span><ol start="21">
+<li>⭐⭐ Vì sao không dùng bf16 như bài báo?</li>
+</ol></span></summary><div class="ans"><p>GPU T4 (kiến trúc Turing) không hỗ trợ bf16 bằng phần cứng; phải là GPU Ampere trở lên như A100 hay H100. Script tự chọn: bf16 nếu GPU hỗ trợ, ngược lại dùng fp32.</p></div></details><details id="q22" data-lv="2"><summary><span><ol start="22">
+<li>⭐⭐ "FlashAttention2 is not installed" có ảnh hưởng không?</li>
+</ol></span></summary><div class="ans"><p>Không ảnh hưởng đến kết quả. FlashAttention chỉ là cách tính attention nhanh hơn, kết quả toán học vẫn như cũ. T4 không hỗ trợ FlashAttention2 nên nhóm dùng attention thường; chỉ chậm hơn và tốn bộ nhớ hơn.</p></div></details><details id="q23" data-lv="3"><summary><span><ol start="23">
+<li>⭐⭐⭐ Bài báo ghi 36K tham số, nhóm ra 17.921. Ai sai?</li>
+</ol></span></summary><div class="ans"><p>Theo code tác giả công bố, tham số học được là <code>meta_queries</code> (20 × 896 = 17.920) cộng <code>logit_scale</code> (1), tức 17.921. Nhóm không tìm thấy thành phần nào khác trong code để ra 36K. Có thể tác giả tính theo cấu hình khác, hoặc số trong bài bị nhầm. Nhóm chỉ báo cáo con số đo được từ checkpoint.</p></div></details><details id="q24" data-lv="2"><summary><span><ol start="24">
+<li>⭐⭐ Zero-shot lần 1 ra 3,8, lần 2 ra 7,2. Tại sao khác?</li>
+</ol></span></summary><div class="ans"><p>Zero-shot dùng 20 query <strong>khởi tạo ngẫu nhiên</strong>, và khi đánh giá không cố định seed, nên mỗi lần chạy có bộ query khác nhau. Điều này cũng cho thấy query ngẫu nhiên cho kết quả rất không ổn định, còn query đã học thì ổn định và cao hơn nhiều.</p></div></details><details id="q25" data-lv="2"><summary><span><ol start="25">
+<li>⭐⭐ Zero-shot của nhóm có giống thí nghiệm thăm dò trong bài không?</li>
+</ol></span></summary><div class="ans"><p>Không hoàn toàn. Thí nghiệm thăm dò của bài dùng <strong>1 query khởi tạo bằng 0</strong> kèm prompt "Summary above sentence in one word". Zero-shot của nhóm dùng 20 query ngẫu nhiên và không có prompt tóm tắt. Nhóm dùng nó làm <strong>mốc trước khi huấn luyện</strong>, không phải để tái hiện thí nghiệm thăm dò.</p></div></details><details id="q26" data-lv="3"><summary><span><ol start="26">
+<li>⭐⭐⭐ Đánh giá chỉ có một lần chạy, sao biết kết quả không do may mắn?</li>
+</ol></span></summary><div class="ans"><p>Đúng là nhóm chỉ huấn luyện một lần (seed 42) do giới hạn GPU. Tuy vậy:</p>
+<ol>
+<li>Đánh giá trên tập lớn (5000 caption hoặc 25000 caption) nên sai số thống kê nhỏ.</li>
+<li>Kết quả nhất quán trên cả hai bộ và mọi chỉ số.</li>
+<li>Mức tăng rất lớn (7 → 69), khó là do ngẫu nhiên.</li>
+</ol>
+<p>Nếu có thêm tài nguyên, nhóm sẽ chạy nhiều seed và báo cáo độ lệch chuẩn.</p></div></details><details id="q27" data-lv="2"><summary><span><ol start="27">
+<li>⭐⭐ Huấn luyện trên COCO rồi đánh giá trên Flickr có hợp lệ không?</li>
+</ol></span></summary><div class="ans"><p>Hợp lệ. Bài báo cũng làm vậy. Đánh giá trên Flickr là kiểm tra khả năng <strong>tổng quát hóa</strong> sang bộ dữ liệu khác. Với COCO, nhóm huấn luyện trên COCO 2017 train và đánh giá trên COCO 5K test (Karpathy split); hai bộ ảnh này không trùng nhau.</p></div></details><details id="q28" data-lv="3"><summary><span><ol start="28">
+<li>⭐⭐⭐ Ảnh của COCO 2017 train có trùng với COCO 5K test (Karpathy) không?</li>
+</ol></span></summary><div class="ans"><p>Đây là câu hỏi hay. COCO 2017 train được tạo từ 2014 train cộng phần lớn 2014 val. Karpathy test lại lấy 5000 ảnh từ 2014 val. Vì vậy <strong>có khả năng có ảnh trùng</strong> giữa tập train nhóm dùng và COCO 5K test. Nhóm <strong>chưa kiểm tra</strong> điều này.</p>
+<p>Nếu có trùng, kết quả trên COCO có thể bị đẩy lên một chút. Hướng xử lý là lọc theo <code>cocoid</code> hoặc dùng Karpathy train split. Kết quả trên Flickr không bị ảnh hưởng.</p></div></details><details id="q29" data-lv="2"><summary><span><ol start="29">
+<li>⭐⭐ Vì sao chỉ dùng 20 nghìn cặp mà không dùng hết?</li>
+</ol></span></summary><div class="ans"><p>Do giới hạn tài nguyên. Ở fp32, 20 nghìn cặp mất 155 phút trên T4. Toàn bộ khoảng 118 nghìn ảnh sẽ mất khoảng 15 giờ, vượt giới hạn 12 giờ mỗi lần chạy của Kaggle. Mỗi ảnh nhóm chỉ lấy 1 caption để trong batch không có hai mẫu dương trùng ảnh.</p></div></details></section>
+<section class="sec" id="g3"><h2>D. Đánh giá phản biện<span class="count">5 câu</span></h2><details id="q30" data-lv="2"><summary><span><ol start="30">
+<li>⭐⭐ Điểm mạnh và yếu của SLQ?</li>
+</ol></span></summary><div class="ans"><p><strong>Mạnh:</strong></p>
+<ul>
+<li>Cực ít tham số, huấn luyện nhanh.</li>
+<li>Không làm hỏng mô hình gốc: một backbone có thể dùng chung cho nhiều tác vụ, mỗi tác vụ chỉ cần lưu một bộ query vài chục KB. File <code>slq_q20.pt</code> của nhóm chỉ 73 KB.</li>
+<li>Đơn giản, dễ cài đặt.</li>
+</ul>
+<p><strong>Yếu:</strong></p>
+<ul>
+<li>Khi suy luận vẫn phải chạy cả MLLM (1 đến 8 tỷ tham số), nên chậm hơn nhiều so với CLIP.</li>
+<li>Không học được đặc trưng thị giác mới, nên khó dùng cho miền dữ liệu lạ.</li>
+<li>Mỗi ảnh tốn 256 token đầu vào.</li>
+</ul></div></details><details id="q31" data-lv="3"><summary><span><ol start="31">
+<li>⭐⭐⭐ Nếu SLQ tốt như vậy, sao không dùng thay CLIP ngay?</li>
+</ol></span></summary><div class="ans"><p>Về <strong>độ chính xác</strong>, SLQ tốt hơn, nhất là với truy vấn cần suy luận. Về <strong>chi phí khi suy luận</strong>, mã hóa một ảnh với InternVL3-1B tốn hơn nhiều so với CLIP ViT-B (khoảng 150 triệu tham số). Với hệ thống cần độ trễ thấp, CLIP vẫn hợp lý hơn.</p>
+<p>Kết quả của nhóm cũng cho thấy chiều Image→Text chưa vượt CLIP ViT-B. Lựa chọn phụ thuộc vào bài toán: cần độ chính xác và suy luận, hay cần tốc độ.</p></div></details><details id="q32" data-lv="2"><summary><span><ol start="32">
+<li>⭐⭐ Tác giả tự nêu hạn chế gì?</li>
+</ol></span></summary><div class="ans"><ol>
+<li>Đóng băng backbone thì khó thích nghi với miền dữ liệu rất khác (ảnh y tế, ảnh vệ tinh). Có thể mở băng một phần hoặc thêm adapter cho phần thị giác.</li>
+<li>Mới thử với InfoNCE đối xứng; chưa thử triplet loss, listwise hay hard negative mining.</li>
+</ol></div></details><details id="q33" data-lv="3"><summary><span><ol start="33">
+<li>⭐⭐⭐ Có thể áp dụng cho tiếng Việt không?</li>
+</ol></span></summary><div class="ans"><p>Về nguyên lý là có, vì Qwen2 (LLM bên trong InternVL3) có hỗ trợ tiếng Việt ở mức nhất định. Nhóm đã viết sẵn chế độ đánh giá <code>--data custom</code> với file CSV gồm cột <code>image,caption</code>. Có thể thử trên UIT-ViIC hoặc KTVIC. Hiệu quả cần được kiểm chứng bằng thực nghiệm.</p></div></details><details id="q34" data-lv="2"><summary><span><ol start="34">
+<li>⭐⭐ Nếu có thêm thời gian và GPU, nhóm sẽ làm gì?</li>
+</ol></span></summary><div class="ans"><ol>
+<li>Huấn luyện toàn bộ COCO, 5 epoch, batch lớn hơn (dùng GradCache hoặc nhiều GPU).</li>
+<li>Làm lại thí nghiệm về số query N = 1, 5, 10, 20, 32.</li>
+<li>Chạy nhiều seed.</li>
+<li>So sánh với LoRA trong cùng điều kiện.</li>
+<li>Thử trên dữ liệu tiếng Việt.</li>
+</ol></div></details></section>
+<section class="sec" id="g4"><h2>E. Câu hỏi "bẫy" thường gặp</h2><div class="tbl"><table>
+<thead>
+<tr>
+<th>Câu hỏi</th>
+<th>Ý trả lời</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Mô hình có bị thay đổi gì không?"</td>
+<td>Không. 100% trọng số InternVL3 giữ nguyên; chỉ học 20 vector query và τ.</td>
+</tr>
+<tr>
+<td>"20 query là 20 mẫu dữ liệu à?"</td>
+<td>Không. 20 query là 20 vector tham số. Dữ liệu huấn luyện là 20 nghìn cặp ảnh–caption.</td>
+</tr>
+<tr>
+<td>"Kết quả có vượt bài báo không?"</td>
+<td>Không, đạt khoảng 83–97%. Nguyên nhân là dữ liệu, batch và phần cứng ít hơn.</td>
+</tr>
+<tr>
+<td>"Có vượt CLIP không?"</td>
+<td>Chiều Text→Image vượt CLIP ViT-B trên cả hai bộ. Chiều Image→Text thấp hơn một chút.</td>
+</tr>
+<tr>
+<td>"Nhóm có đánh giá KARR-Bench không?"</td>
+<td>Không, vì bộ dữ liệu chưa được công bố.</td>
+</tr>
+<tr>
+<td>"Code là của nhóm hay của tác giả?"</td>
+<td>Logic theo đúng code tác giả. Nhóm viết lại để sửa lỗi và chạy được trên T4, có ghi rõ các điểm khác biệt.</td>
+</tr>
+</tbody>
+</table></div></section>
+<script>
+(() => {
+  const bar = document.getElementById('bar');
+  const links = [...document.querySelectorAll('aside a')];
+  const targets = links.map(a => document.getElementById(a.hash.slice(1))).filter(Boolean);
+  function onScroll() {
+    const h = document.documentElement;
+    bar.style.width = (h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight) * 100) + '%';
+    let cur = targets[0];
+    for (const t of targets) if (t.getBoundingClientRect().top < 120) cur = t;
+    links.forEach(a => a.classList.toggle('on', cur && a.hash === '#' + cur.id));
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  const all = [...document.querySelectorAll('details')];
+  if (!all.length) return;
+  const btns = [...document.querySelectorAll('[data-lv]')];
+  btns.forEach(b => b.onclick = () => {
+    btns.forEach(x => x.classList.toggle('on', x === b));
+    all.forEach(d => d.hidden = b.dataset.lv !== 'all' && d.dataset.lv !== b.dataset.lv);
+  });
+  document.getElementById('openAll').onclick = () => all.forEach(d => d.open = true);
+  document.getElementById('closeAll').onclick = () => all.forEach(d => d.open = false);
+  if (location.hash) { const d = document.getElementById(location.hash.slice(1)); if (d && d.tagName === 'DETAILS') d.open = true; }
+})();
+</script></main></div></body></html>

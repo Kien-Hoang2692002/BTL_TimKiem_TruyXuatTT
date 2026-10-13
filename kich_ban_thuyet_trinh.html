@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kịch bản thuyết trình SLQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f7fb; --surface:#ffffff; --fg:#161a2b; --mute:#5d6584; --line:#e3e6f0;
+  --accent:#6a3df0; --accent2:#0aa5c2; --pink:#d6337f; --quote:#f1effd;
+  --font:"Be Vietnam Pro",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a0c16; --surface:#121528; --fg:#e7eaf7; --mute:#97a0c4; --line:#242a45;
+  --accent:#a585ff; --accent2:#3ee6ff; --pink:#ff6fb5; --quote:#191c34; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a0c16; --surface:#121528; --fg:#e7eaf7; --mute:#97a0c4; --line:#242a45;
+  --accent:#a585ff; --accent2:#3ee6ff; --pink:#ff6fb5; --quote:#191c34; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 var(--font);-webkit-font-smoothing:antialiased}
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:800;letter-spacing:-.01em}
+.brand span{background:linear-gradient(100deg,var(--accent2),var(--accent),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.nav{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.nav a{font:600 13px var(--font);color:var(--mute);text-decoration:none;padding:6px 12px;border-radius:99px;border:1px solid var(--line)}
+.nav a:hover,.nav a:focus-visible{color:var(--fg);border-color:var(--accent);outline:none}
+.nav a.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent),var(--pink));z-index:6}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:28px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px}
+aside{position:sticky;top:76px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;font-size:13.5px}
+aside .lbl{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+aside a{display:block;padding:5px 10px;border-left:2px solid var(--line);color:var(--mute);text-decoration:none;line-height:1.4}
+aside a:hover{color:var(--fg)}
+aside a.on{border-color:var(--accent);color:var(--fg);font-weight:600}
+main{min-width:0}
+h1{font-size:clamp(28px,4vw,42px);line-height:1.15;letter-spacing:-.02em;margin:0 0 10px;text-wrap:balance}
+h2{font-size:22px;line-height:1.3;margin:0 0 12px;text-wrap:balance}
+h3{font-size:17px;margin:18px 0 6px}
+p{margin:8px 0}
+a{color:var(--accent)}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:4px 0}
+code{font:13.5px var(--mono);background:var(--quote);padding:1px 6px;border-radius:6px}
+hr{display:none}
+blockquote{margin:12px 0;padding:12px 16px;background:var(--quote);border-left:3px solid var(--accent);border-radius:0 12px 12px 0}
+blockquote p{margin:6px 0}
+.intro{color:var(--mute)}
+.intro ul{list-style:none;padding:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:18px 0;transition:border-color .2s}
+.card:target{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mute);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em}
+.chip{display:inline-block;font:600 12px var(--mono);padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--accent2) 15%,transparent);color:var(--accent2);margin-left:8px;vertical-align:middle}
+.num{font:600 12px var(--mono);color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:2px}
+/* Q&A */
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 4px}
+.tools button{font:600 13px var(--font);background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:7px 14px;cursor:pointer}
+.tools button:hover,.tools button:focus-visible{border-color:var(--accent);outline:none}
+.tools button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+details{border:1px solid var(--line);border-radius:14px;background:var(--surface);margin:10px 0;overflow:hidden}
+details[hidden]{display:none}
+summary{cursor:pointer;list-style:none;padding:14px 18px;font-weight:600;display:flex;gap:12px;align-items:flex-start}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--quote);color:var(--accent);font:700 15px var(--mono);margin-top:2px;transition:transform .2s}
+details[open] summary::before{content:"−"}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ans{padding:0 18px 14px 52px;border-top:1px dashed var(--line)}
+.sec{margin-top:34px}
+.sec>h2{display:flex;align-items:center;gap:10px}
+.count{font:600 12px var(--mono);color:var(--mute)}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}aside{display:none}.ans{padding-left:18px}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style></head><body>
+<div id="bar"></div>
+<header class="top"><div class="in">
+ <div class="brand"><span>SLQ</span> · Nhóm báo cáo</div>
+ <nav class="nav">
+  <a href="bao_cao_SLQ.html">Slide</a>
+  <a href="kich_ban_thuyet_trinh.html" class="on">Kịch bản</a>
+  <a href="cau_hoi_QA.html" >Hỏi đáp</a>
+ </nav>
+</div></header>
+<div class="wrap"><aside><div class="lbl">Mục lục</div><a href="#s1">1. Trang bìa</a><a href="#s2">2. Bài toán truy xuất đa phương thức</a><a href="#s3">3. Động lực</a><a href="#s4">4. Thí nghiệm thăm dò</a><a href="#s5">5. Kiến trúc SLQ (slide quan trọng nhất)</a><a href="#s6">6. Vì sao đặt query ở cuối?</a><a href="#s7">7. KARR-Bench</a><a href="#s8">8. Kết quả trong bài báo</a><a href="#s9">9. Ablation, chọn N = 20</a><a href="#s10">10. Thiết lập tái hiện</a><a href="#s11">11. Quá trình huấn luyện</a><a href="#s12">12. Những trục trặc khi tái hiện</a><a href="#s13">13. Trước và sau khi học</a><a href="#s14">14. So sánh</a><a href="#s15">15. Phân tích chênh lệch</a><a href="#s16">16. Kết luận</a><a href="#s17">17. Cảm ơn và hỏi đáp</a><a href="#p17">Phân công gợi ý</a></aside><main>
+<h1>Kịch bản thuyết trình: SLQ (Shared Latent Queries)</h1><div class="intro"><ul>
+<li><strong>Slide:</strong> <code>bao_cao_SLQ.html</code>, 17 slide</li>
+<li><strong>Thời lượng gợi ý:</strong> 15–18 phút trình bày và 5–10 phút hỏi đáp</li>
+<li><strong>Điều khiển:</strong> phím ← → hoặc Space để chuyển slide, phím F để bật toàn màn hình</li>
+<li><strong>Phân công gợi ý:</strong> 5 người, mỗi người một phần (xem bảng cuối file). Nhóm tự chỉnh lại cho phù hợp.</li>
+</ul>
+<blockquote>
+<p>Mỗi slide gồm: <strong>Thời gian</strong>, <strong>Ý chính</strong> (bắt buộc phải nói), <strong>Lời thoại gợi ý</strong> (nói tự nhiên, không đọc nguyên văn) và <strong>Chuyển ý</strong> sang slide sau.</p>
+</blockquote></div>
+<section class="card" id="s1"><h2><span class="num">SLIDE 1</span>Trang bìa<span class="chip">⏱ 30 giây</span></h2><p><strong>Ý chính:</strong> chào cô, giới thiệu nhóm, nêu tên bài báo.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Em chào cô và các bạn. Nhóm em gồm 5 học viên: Kiên, Quang, Trang, Minh và Hưng. Hôm nay nhóm em trình bày bài báo <strong>"SLQ: Bridging Modalities via Shared Latent Queries for Retrieval with Frozen MLLMs"</strong>, được nhận đăng tại ICML 2026. Câu hỏi bài báo đặt ra là: có thể biến một mô hình ngôn ngữ lớn đa phương thức thành công cụ tìm kiếm ảnh–văn bản mà chỉ cần học khoảng 18 nghìn tham số hay không. Ngoài việc trình bày bài báo, nhóm em đã chạy lại code của tác giả và đánh giá kết quả.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Trước hết, nhóm em xin nói về bài toán."</p></section>
+<section class="card" id="s2"><h2><span class="num">SLIDE 2</span>Bài toán truy xuất đa phương thức<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Định nghĩa: Text→Image (tìm ảnh từ câu) và Image→Text (tìm câu từ ảnh).</li>
+<li>Cách làm: dense retrieval, tức mã hóa thành vector rồi xếp hạng theo cosine similarity. Đây là nội dung liên quan trực tiếp đến môn học.</li>
+<li>Hai hướng hiện có: dual-encoder (CLIP) và MLLM làm retriever.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Bài toán là truy xuất đa phương thức: cho một câu mô tả thì tìm ảnh phù hợp, hoặc ngược lại. Cách phổ biến là dense retrieval, giống mô hình không gian vector đã học trong môn: mã hóa ảnh và văn bản thành vector trong cùng một không gian, rồi xếp hạng theo độ tương đồng cosine.</p>
+<p>Có hai hướng chính. Thứ nhất là dual-encoder như CLIP, dùng hai bộ mã hóa riêng cho ảnh và văn bản. Cách này nhanh nhưng chủ yếu khớp bề mặt. Thứ hai là dùng MLLM, các mô hình như GPT-4V hay Qwen-VL, vốn giàu tri thức và biết suy luận. Nhưng muốn dùng MLLM để tìm kiếm thì phải fine-tune.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Vậy fine-tune thì có vấn đề gì?"</p></section>
+<section class="card" id="s3"><h2><span class="num">SLIDE 3</span>Động lực<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> hai vấn đề của fine-tune, và giả thuyết của tác giả.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Có hai vấn đề. Một là <strong>suy giảm ngữ nghĩa</strong>: MLLM được huấn luyện để sinh văn bản, còn truy xuất cần phân biệt đúng sai. Hai mục tiêu này xung đột, nên cập nhật trọng số mạnh tay sẽ làm mô hình quên kiến thức cũ. Hai là <strong>chi phí</strong>: fine-tune toàn bộ bản 8B mất hơn 400 giờ GPU H800.</p>
+<p>Tác giả đưa ra giả thuyết: MLLM đã được huấn luyện trên lượng lớn cặp ảnh–văn bản, nên bên trong nó đã có sẵn một không gian ảnh–văn bản được căn chỉnh. Ta không cần dạy lại mô hình, chỉ cần "khơi gợi" biểu diễn đó ra.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Để kiểm chứng giả thuyết này, tác giả làm một thí nghiệm thăm dò."</p></section>
+<section class="card" id="s4"><h2><span class="num">SLIDE 4</span>Thí nghiệm thăm dò<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>So sánh hai cách lấy embedding: last token và query token.</li>
+<li>Ba mức độ khó. Câu "(2+7) lives" là ví dụ đáng nhớ nhất.</li>
+<li>Kết luận: last token bị nút thắt thông tin.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Tác giả so sánh hai cách lấy vector từ MLLM khi chưa huấn luyện gì. Cách thứ nhất lấy token cuối cùng, cách mà VLM2VEC hay E5-V đang dùng. Cách thứ hai gắn thêm một vector query vào cuối chuỗi.</p>
+<p>Với câu đơn giản "A black cat", cả hai đều đúng. Với câu cần tri thức "An animal that barks", last token có điểm số các ảnh gần như nhau, nên khó phân biệt. Thú vị nhất là câu "con vật có (2+7) mạng". Mèo có 9 mạng, nên đáp án là con mèo. Last token tìm sai, còn query token tìm đúng.</p>
+<p>Kết luận: MLLM vốn đã biết suy luận. Vấn đề là last token phải nén mọi thứ vào một vector, gây ra nút thắt thông tin.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Từ quan sát này, tác giả đề xuất SLQ."</p></section>
+<section class="card" id="s5"><h2><span class="num">SLIDE 5</span>Kiến trúc SLQ (slide quan trọng nhất)<span class="chip">⏱ 2 phút</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Gắn 20 vector query vào <strong>cuối</strong> chuỗi của cả ảnh lẫn văn bản.</li>
+<li>"Shared": dùng <strong>cùng một</strong> bộ query cho cả hai phương thức.</li>
+<li>MLLM đóng băng hoàn toàn. Lấy hidden state của 20 vị trí query, mean pooling, rồi chuẩn hóa L2.</li>
+<li>Loss: InfoNCE đối xứng.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Đây là phần cốt lõi. Với ảnh, chuỗi đầu vào gồm 256 token ảnh, câu prompt, rồi 20 vector query. Với văn bản cũng vậy: văn bản, prompt, rồi <strong>đúng 20 vector query đó</strong>. Chữ "Shared" nghĩa là hai phương thức dùng chung một bộ query, nhờ vậy cả hai bị ép về cùng một không gian.</p>
+<p>Toàn bộ MLLM bị đóng băng, không đổi một trọng số nào. Chạy qua mô hình xong, ta lấy hidden state lớp cuối tại 20 vị trí query, lấy trung bình, rồi chuẩn hóa. Kết quả là vector embedding.</p>
+<p>Hàm mất mát là InfoNCE đối xứng. Trong một batch, kéo cặp ảnh–caption đúng lại gần nhau và đẩy các cặp sai ra xa. Những thứ duy nhất được học là 20 vector query và nhiệt độ τ.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Một câu hỏi tự nhiên là: tại sao query phải đặt ở cuối?"</p></section>
+<section class="card" id="s6"><h2><span class="num">SLIDE 6</span>Vì sao đặt query ở cuối?<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> causal attention, minh họa bằng hình lưới attention trên slide.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>MLLM là mô hình decoder-only, dùng causal attention: mỗi token chỉ nhìn được các token đứng trước nó. Hình bên trái là cách prompt tuning làm: đặt token học được ở đầu chuỗi. Khi đó các ô màu hồng chỉ nhìn được chính nó, không thấy nội dung phía sau. Hình bên phải là SLQ: query đặt ở cuối nên nhìn được toàn bộ đầu vào. Vì vậy query thu thập được toàn bộ thông tin.</p>
+<p>Thí nghiệm ablation trong bài báo xác nhận điều này: prompt tuning kém hơn SLQ khoảng 3–4 điểm.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Ngoài phương pháp, bài báo còn đóng góp một benchmark mới."</p></section>
+<section class="card" id="s7"><h2><span class="num">SLIDE 7</span>KARR-Bench<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Benchmark cũ chỉ kiểm tra khớp bề mặt; KARR-Bench kiểm tra suy luận.</li>
+<li>Gồm 2.915 cặp, có 6 loại suy luận, tên vật thể bị che đi.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Các benchmark như COCO dùng caption mô tả trực tiếp, kiểu "con mèo xám ngồi trên kệ sách". KARR-Bench viết lại thành câu đố: "con vật có (2+7) mạng ngồi trên kệ sách". Câu đố do GPT-5-mini sinh ra, sau đó 4 người kiểm duyệt chéo. Quy tắc là cấm nêu tên vật thể. Bộ dữ liệu có 2.915 cặp, chia khá đều cho 6 loại suy luận: văn hóa, công dụng, không gian, chức năng, bách khoa và logic toán.</p>
+<p>Bộ này <strong>chưa được công bố</strong>, nên nhóm em không đánh giá được trên nó.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Giờ ta xem kết quả trong bài báo."</p></section>
+<section class="card" id="s8"><h2><span class="num">SLIDE 8</span>Kết quả trong bài báo<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>SLQ-8B dùng 144K tham số, so với 20,2 triệu của LoRA, tức ít hơn khoảng 140 lần. Giờ GPU giảm 70%.</li>
+<li>Kết quả vẫn tốt hơn, và <strong>giữ nguyên năng lực VQA</strong>.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Với bản 8B, SLQ chỉ học 144 nghìn tham số, còn LoRA cần 20 triệu và fine-tune toàn bộ cần 7,6 tỷ. Thời gian huấn luyện giảm 70% so với LoRA, nhưng kết quả truy xuất vẫn cao hơn.</p>
+<p>Điểm đáng chú ý nhất là ba cột MMMU, RealWorldQA và OCRBench, đo khả năng hiểu ảnh của mô hình gốc. Fine-tune và LoRA đều làm các điểm này giảm, tức mô hình bị "quên". SLQ thì giữ nguyên, vì backbone không bị động vào. Trên benchmark MMEB gồm 36 tác vụ, SLQ-8B đạt 67,5 điểm, cao nhất trong bảng so sánh.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Tại sao lại là 20 query?"</p></section>
+<section class="card" id="s9"><h2><span class="num">SLIDE 9</span>Ablation, chọn N = 20<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> N tăng đến 20 thì tốt lên, N = 32 thì giảm. Query dùng chung tốt hơn query riêng. Mean pooling tốt nhất.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Tác giả thử số query từ 1 đến 32. Kết quả tăng dần và đạt đỉnh ở N = 20, sang 32 thì giảm vì dư thừa và overfit. Có hai phát hiện khác. Một là dùng chung query tốt hơn mỗi phương thức một bộ riêng, dù bộ riêng có gấp đôi tham số. Hai là mean pooling tốt hơn max pooling hay lấy query cuối.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Đó là phần bài báo. Tiếp theo là phần nhóm em tự làm: tái hiện kết quả."</p></section>
+<section class="card" id="s10"><h2><span class="num">SLIDE 10</span>Thiết lập tái hiện<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Giữ nguyên backbone, số query và learning rate.</li>
+<li>Thu nhỏ dữ liệu, batch và phần cứng.</li>
+<li>Mô hình chỉ học <strong>17.921 tham số</strong>. τ học được là 0,021.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Nhóm em giữ đúng backbone InternVL3-1B, 20 query và learning rate 5e-4. Do chỉ có GPU T4 miễn phí của Kaggle, nhóm em thu nhỏ quy mô: 20 nghìn cặp ảnh–caption của COCO thay vì toàn bộ, 1 epoch thay vì 5, batch 64 thay vì 1024.</p>
+<p>Số tham số huấn luyện là 17.921, đúng bằng 20 nhân 896 cộng 1 cho τ. Bài báo ghi khoảng 36 nghìn cho bản 1B. Nhóm em đã đọc kỹ code tác giả công bố và chỉ tính ra được khoảng 18 nghìn.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Quá trình huấn luyện diễn ra như sau."</p></section>
+<section class="card" id="s11"><h2><span class="num">SLIDE 11</span>Quá trình huấn luyện<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Loss giảm từ 3,63 xuống khoảng 0,2–0,3 sau khoảng 100 bước.</li>
+<li>τ giảm từ 0,07 xuống 0,021.</li>
+<li>Huấn luyện mất 155 phút trên T4.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Đường màu hồng là loss. Nó bắt đầu ở 3,63, gần mức đoán ngẫu nhiên ln 64 ≈ 4,16, rồi giảm rất nhanh và ổn định quanh 0,2–0,3 sau khoảng 100 bước. Đường xanh là nhiệt độ τ, mô hình tự học từ 0,07 xuống 0,021. τ nhỏ hơn làm phân phối "nhọn" hơn, tức mô hình tự tin hơn khi phân biệt đúng sai. Huấn luyện mất 155 phút; cả quá trình gồm đánh giá mất khoảng 3,6 giờ.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Tuy nhiên để có được kết quả này, nhóm em đã gặp khá nhiều trục trặc."</p></section>
+<section class="card" id="s12"><h2><span class="num">SLIDE 12</span>Những trục trặc khi tái hiện<span class="chip">⏱ 1 phút 30 giây</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Code gốc không chạy được: thiếu package, dòng tạo query bị comment, cấu hình mặc định khác bài báo.</li>
+<li>Lỗi fp16: kết quả 0,1%, ngang đoán ngẫu nhiên. Chuyển sang fp32 thì kết quả bình thường.</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Code tác giả công bố không chạy được ngay. Code import một package không có trong repo. Dòng tạo các vector query bị comment, nên chạy là báo lỗi. Cấu hình mặc định cũng khác bài báo: 1 query thay vì 20, learning rate 1e-5 thay vì 5e-4. Nhóm em viết lại thành một script độc lập nhưng giữ đúng logic gốc.</p>
+<p>Lỗi khó nhất: lần chạy đầu ra kết quả <strong>0,1%</strong>, ngang đoán bừa, kể cả sau khi huấn luyện. Nhóm em phát hiện khi chạy trên GPU T4 với số thực 16 bit (fp16), kết quả bị hỏng. Chuyển sang fp32 thì mọi thứ bình thường. Bài học là luôn so với mức đoán ngẫu nhiên để phát hiện lỗi, và nhóm em đã thêm bước tự kiểm tra NaN vào code.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Và đây là kết quả."</p></section>
+<section class="card" id="s13"><h2><span class="num">SLIDE 13</span>Trước và sau khi học<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> chỉ học 17.921 tham số mà Text→Image R@1 tăng từ 7,2 lên 69,0, gần 10 lần.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Thanh xám là kết quả zero-shot: 20 query còn ngẫu nhiên, chưa học. Thanh màu là sau khi học. Text→Image R@1, tức tỷ lệ tìm đúng ảnh ngay ở vị trí đầu tiên, tăng từ 7,2% lên 69%. Image→Text R@1 tăng từ 17,7% lên 75,7%. R@10 đạt 93,7% và 98,5%. Toàn bộ thay đổi này chỉ nhờ 17.921 tham số; mô hình 1 tỷ tham số không đổi gì.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "So với bài báo và CLIP thì sao?"</p></section>
+<section class="card" id="s14"><h2><span class="num">SLIDE 14</span>So sánh<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
+<ul>
+<li>Kết quả đạt khoảng 83–97% số liệu bài báo.</li>
+<li>Chiều Text→Image vượt CLIP ViT-B trên cả hai bộ. Riêng COCO cao hơn 11,6 điểm.</li>
+<li>Chiều Image→Text gần bằng CLIP ViT-B (75,7 so với 77,8; 50,9 so với 51,0).</li>
+</ul>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Dòng tô sáng là của nhóm em. So với bài báo, nhóm em đạt khoảng 83 đến 97 phần trăm tùy chỉ số. Ví dụ Flickr Text→Image R@5 đạt 89,9, so với 92,9 của bài báo.</p>
+<p>So với CLIP ViT-B, ở chiều Text→Image nhóm em vượt trên cả hai bộ; riêng COCO R@1 cao hơn 11,6 điểm. Ở chiều Image→Text thì gần bằng, thấp hơn một chút. Nhóm em nói rõ điều này để không phóng đại kết quả.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Vì sao vẫn thấp hơn bài báo?"</p></section>
+<section class="card" id="s15"><h2><span class="num">SLIDE 15</span>Phân tích chênh lệch<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> ít dữ liệu, batch nhỏ, phần cứng yếu. Xu hướng chính vẫn được tái hiện.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Có ba nguyên nhân chính. Một: nhóm em chỉ dùng khoảng 20 nghìn cặp và 1 epoch, so với toàn bộ COCO và 5 epoch của bài báo. Hai: batch 64 so với 1024. Với InfoNCE, mỗi mẫu so với các mẫu khác trong batch làm mẫu âm, nên batch nhỏ hơn 16 lần thì tín hiệu học yếu hơn. Ba: một GPU T4 chạy fp32 và quota Kaggle giới hạn.</p>
+<p>Dù vậy, kết luận chính của bài báo đã được tái hiện: chỉ học vài chục nghìn tham số trên một mô hình đóng băng vẫn cho kết quả truy xuất rất tốt.</p>
+</blockquote>
+<p><strong>Chuyển ý:</strong> "Nhóm em xin tổng kết."</p></section>
+<section class="card" id="s16"><h2><span class="num">SLIDE 16</span>Kết luận<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong> đã làm được gì, hạn chế, hướng tiếp theo.</p>
+<p><strong>Lời thoại gợi ý:</strong></p>
+<blockquote>
+<p>Nhóm em đã phân tích phương pháp SLQ và KARR-Bench, sửa code gốc và tái hiện thành công trên GPU miễn phí, đạt tới 96,7% kết quả bài báo ở Flickr Text→Image R@5.</p>
+<p>Hạn chế: chưa đánh giá được trên KARR-Bench vì bộ dữ liệu chưa công bố, dữ liệu huấn luyện ít, và chỉ thử bản 1B. Bản thân phương pháp cũng có hạn chế: đóng băng backbone thì khó thích nghi với ảnh y tế hay ảnh vệ tinh.</p>
+<p>Hướng tiếp theo: huấn luyện trên toàn bộ COCO, làm lại thí nghiệm về số query, và thử trên dữ liệu tiếng Việt như UIT-ViIC.</p>
+</blockquote></section>
+<section class="card" id="s17"><h2><span class="num">SLIDE 17</span>Cảm ơn và hỏi đáp<span class="chip">⏱ 10 giây</span></h2><blockquote>
+<p>Nhóm em xin cảm ơn cô và các bạn đã lắng nghe. Nhóm em rất mong nhận được câu hỏi và góp ý ạ.</p>
+</blockquote></section>
+<section class="card" id="p17"><h2>Phân công gợi ý</h2><div class="tbl"><table>
+<thead>
+<tr>
+<th>Phần</th>
+<th>Slide</th>
+<th>Người trình bày</th>
+<th>Thời gian</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mở đầu và bài toán</td>
+<td>1–3</td>
+<td>Hoàng Văn Kiên</td>
+<td>~2,5 phút</td>
+</tr>
+<tr>
+<td>Thăm dò và phương pháp</td>
+<td>4–6</td>
+<td>Nguyễn Minh Quang</td>
+<td>~4,5 phút</td>
+</tr>
+<tr>
+<td>KARR-Bench và kết quả bài báo</td>
+<td>7–9</td>
+<td>Nguyễn Thị Quỳnh Trang</td>
+<td>~3,5 phút</td>
+</tr>
+<tr>
+<td>Tái hiện: thiết lập, huấn luyện, lỗi</td>
+<td>10–12</td>
+<td>Đỗ Nhật Minh</td>
+<td>~3,5 phút</td>
+</tr>
+<tr>
+<td>Kết quả, phân tích, kết luận</td>
+<td>13–17</td>
+<td>Trần Khánh Hưng</td>
+<td>~4,5 phút</td>
+</tr>
+</tbody>
+</table></div>
+<h2>Mẹo khi trình bày</h2>
+<ul>
+<li><strong>Slide 5 và slide 12</strong> là hai chỗ cô dễ hỏi nhất. Người trình bày nên nắm thật chắc.</li>
+<li>Nhấn mạnh con số <strong>17.921 tham số</strong> và câu đố <strong>"(2+7) lives"</strong>. Hai chi tiết này dễ nhớ.</li>
+<li>Khi nói về kết quả, <strong>nói thẳng</strong> những chỗ thấp hơn bài báo hoặc thấp hơn CLIP (chiều Image→Text). Thẳng thắn về hạn chế được đánh giá cao hơn là phóng đại.</li>
+<li>Mở sẵn file <code>bao_cao_SLQ.html</code> trên máy làm phương án dự phòng, để không phụ thuộc mạng.</li>
+</ul></section>
+<script>
+(() => {
+  const bar = document.getElementById('bar');
+  const links = [...document.querySelectorAll('aside a')];
+  const targets = links.map(a => document.getElementById(a.hash.slice(1))).filter(Boolean);
+  function onScroll() {
+    const h = document.documentElement;
+    bar.style.width = (h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight) * 100) + '%';
+    let cur = targets[0];
+    for (const t of targets) if (t.getBoundingClientRect().top < 120) cur = t;
+    links.forEach(a => a.classList.toggle('on', cur && a.hash === '#' + cur.id));
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  const all = [...document.querySelectorAll('details')];
+  if (!all.length) return;
+  const btns = [...document.querySelectorAll('[data-lv]')];
+  btns.forEach(b => b.onclick = () => {
+    btns.forEach(x => x.classList.toggle('on', x === b));
+    all.forEach(d => d.hidden = b.dataset.lv !== 'all' && d.dataset.lv !== b.dataset.lv);
+  });
+  document.getElementById('openAll').onclick = () => all.forEach(d => d.open = true);
+  document.getElementById('closeAll').onclick = () => all.forEach(d => d.open = false);
+  if (location.hash) { const d = document.getElementById(location.hash.slice(1)); if (d && d.tagName === 'DETAILS') d.open = true; }
+})();
+</script></main></div></body></html>
