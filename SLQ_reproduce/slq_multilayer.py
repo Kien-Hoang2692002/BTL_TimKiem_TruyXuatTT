@@ -212,18 +212,19 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", device=None, dtype=None, attn_implementation="sdpa", vit_chunk_size=64):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="sdpa", vit_chunk_size=64):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
             native_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
             dtype = torch.bfloat16 if native_bf16 else torch.float32
-        print(f"Device: {device} | Dtype: {dtype} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
+        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
         self.device, self.dtype = device, dtype
         self.num_queries = num_queries
+        self.pooling = (pooling or "mean").lower()
         self.layers = tuple(layers)
         self.head_type = head_type.lower()
         self.vit_chunk_size = vit_chunk_size
@@ -249,14 +250,30 @@ class SLQMultiLayerEncoder(nn.Module):
         D = self.mllm.language_model.config.hidden_size
         self.hidden_dim = D
 
-        # N Query tokens học được (lưu ở float32 để cập nhật gradient ổn định)
-        self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
+        # N Query tokens học được (lưu ở float32 để cập nhật gradient ổn định).
+        # Nếu num_queries == 0: chế độ đối chứng trích xuất Last Token trực tiếp từ backbone.
+        if num_queries > 0:
+            self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
+        else:
+            self.meta_queries = None
+
         self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device))
         self.backbone = self.mllm.language_model.model  # Qwen2Model
 
         K = len(self.layers)
-        if K == 1 and self.layers[0] in (-1, self.mllm.language_model.config.num_hidden_layers):
-            # Nếu chỉ chọn 1 layer cuối, giữ nguyên dạng mean pooling thuần như SLQ gốc
+        if self.head_type in ("none", "identity"):
+            self.head = None
+        elif self.num_queries == 0:
+            # Đối chứng: trích xuất Last Token từ backbone
+            if self.head_type == "linear":
+                # Giống hệt Table 5 "Head (Linear)" trong bài báo gốc
+                self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device)
+            elif self.head_type == "mlp":
+                self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device)
+            else:
+                self.head = None
+        elif K == 1 and self.layers[0] in (-1, self.mllm.language_model.config.num_hidden_layers, 24) and self.head_type in ("mean", "none", "identity"):
+            # Nếu chỉ chọn 1 layer cuối, giữ nguyên dạng pooling thuần như SLQ gốc
             self.head = None
         elif self.head_type == "mean":
             self.head = MeanLayerPooling().to(device)
@@ -271,13 +288,14 @@ class SLQMultiLayerEncoder(nn.Module):
         elif self.head_type in ("cross_attn", "attention"):
             self.head = CrossAttentionLayerPooling(dim=D).to(device)
         else:
-            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mean', 'mlp', 'residual', 'linear', 'weighted', hoặc 'cross_attn'")
+            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mean', 'mlp', 'residual', 'linear', 'weighted', 'cross_attn', hoặc 'none'")
 
     def _run(self, embeds, mask):
         B = embeds.size(0)
-        q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
-        embeds = torch.cat([embeds, q], dim=1)
-        mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
+        if self.num_queries > 0 and self.meta_queries is not None:
+            q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+            embeds = torch.cat([embeds, q], dim=1)
+            mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
 
         # Trích xuất hidden states từ toàn bộ các layer
         outputs = self.backbone(
@@ -288,14 +306,24 @@ class SLQMultiLayerEncoder(nn.Module):
         )
         all_hidden_states = outputs.hidden_states  # Tuple gồm (embed_out, layer_0, ..., layer_last)
 
-        # Lấy hidden states của N queries ở các layer được chỉ định
+        # Lấy hidden states ở các layer được chỉ định
         layer_embeds = []
         for l_idx in self.layers:
             # l_idx có thể âm (vd -1 là last layer, -2 là áp chót...)
             h_layer = all_hidden_states[l_idx]
-            # Cắt N vị trí query cuối cùng và mean pooling -> [B, D]
-            q_mean = h_layer[:, -q.size(1):].float().mean(dim=1)
-            layer_embeds.append(q_mean)
+            if self.num_queries > 0 and self.meta_queries is not None:
+                # Cắt N vị trí query cuối cùng
+                q_tokens = h_layer[:, -self.num_queries:]
+                if self.pooling == "last":
+                    feat = q_tokens[:, -1, :].float()
+                elif self.pooling == "max":
+                    feat = q_tokens.float().max(dim=1).values
+                else:  # "mean" (mặc định của SLQ gốc)
+                    feat = q_tokens.float().mean(dim=1)
+            else:
+                # Không dùng queries: trích xuất last token của chuỗi input trên backbone
+                feat = h_layer[:, -1, :].float()
+            layer_embeds.append(feat)
 
         # Tổng hợp qua Head
         if self.head is None:
@@ -341,27 +369,34 @@ class SLQMultiLayerEncoder(nn.Module):
         return self.encode_image_from_vit(vit)
 
     def get_trainable_params(self):
-        params = [self.meta_queries, self.logit_scale]
+        params = []
+        if self.meta_queries is not None:
+            params.append(self.meta_queries)
+        params.append(self.logit_scale)
         if self.head is not None:
             params.extend(list(self.head.parameters()))
         return params
 
     def save_queries(self, path):
         ck = {
-            "meta_queries": self.meta_queries.detach().cpu(),
             "logit_scale": self.logit_scale.detach().cpu(),
             "layers": self.layers,
             "head_type": self.head_type,
             "num_queries": self.num_queries,
+            "pooling": self.pooling,
         }
+        if self.meta_queries is not None:
+            ck["meta_queries"] = self.meta_queries.detach().cpu()
         if self.head is not None:
             ck["head_state_dict"] = self.head.state_dict()
         torch.save(ck, path)
 
     def load_queries(self, path):
         ck = torch.load(path, map_location="cpu")
-        self.meta_queries.data.copy_(ck["meta_queries"])
-        self.logit_scale.data.copy_(ck["logit_scale"])
+        if "meta_queries" in ck and ck["meta_queries"] is not None and self.meta_queries is not None:
+            self.meta_queries.data.copy_(ck["meta_queries"])
+        if "logit_scale" in ck:
+            self.logit_scale.data.copy_(ck["logit_scale"])
         if "head_state_dict" in ck and self.head is not None:
             self.head.load_state_dict(ck["head_state_dict"])
             print("Đã nạp trọng số Head projector thành công.")
@@ -508,6 +543,7 @@ def train(args):
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
+        pooling=getattr(args, "pooling", "mean"),
         attn_implementation=args.attn_implementation,
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -558,6 +594,7 @@ def train(args):
                 config={
                     "model_id": MODEL_ID,
                     "num_queries": args.num_queries,
+                    "pooling": getattr(args, "pooling", "mean"),
                     "layers": args.layers,
                     "head_type": args.head_type,
                     "batch_size": args.batch_size,
@@ -577,8 +614,11 @@ def train(args):
 
     # Áp dụng weight_decay nhỏ cho Head nếu dùng MLP/Linear/CrossAttn/Residual
     if model.head is not None and model.head_type in ("mlp", "linear", "cross_attn", "attention", "residual"):
+        base_params = [model.logit_scale]
+        if model.meta_queries is not None:
+            base_params.append(model.meta_queries)
         param_groups = [
-            {"params": [model.meta_queries, model.logit_scale], "weight_decay": 0.0},
+            {"params": base_params, "weight_decay": 0.0},
             {"params": list(model.head.parameters()), "weight_decay": 1e-3},
         ]
     else:
@@ -760,6 +800,7 @@ def evaluate(args):
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
+        pooling=getattr(args, "pooling", "mean"),
         attn_implementation=args.attn_implementation,
     )
     if args.queries != "init":
@@ -775,7 +816,7 @@ def evaluate(args):
                 entity=args.wandb_entity,
                 name=run_name,
                 job_type="eval",
-                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type}
+                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean")}
             )
         except Exception:
             wandb_run = None
@@ -790,9 +831,10 @@ def evaluate(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["train", "eval"])
-    ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20)")
+    ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20; đặt 0 để chạy đối chứng Last Token trên backbone)")
+    ap.add_argument("--pooling", default="mean", choices=["mean", "last", "max"], help="Chiến lược pooling qua N queries: 'mean' (mặc định), 'last', hoặc 'max'")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
-    ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'cross_attn', 'linear', hoặc 'weighted'")
+    ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted", "none", "identity"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'linear', 'none', ...")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--batch_size", type=int, default=128, help="Batch size trên GPU (khuyến nghị 128 trên A100)")
     ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")

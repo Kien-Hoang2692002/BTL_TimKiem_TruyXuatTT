@@ -11,12 +11,16 @@ import os
 import sys
 
 EXP_CONFIGS = [
-    ("Baseline (Layer 24, Mean)", "results_multilayer_slq_baseline_q20.json"),
-    # 4 layer cuối
+    # Nhóm Đối chứng Backbone (Control Baselines)
+    ("Đối chứng: Last Token (Zero-shot)", "results_multilayer_backbone_last_token_zeroshot.json"),
+    ("Đối chứng: Last Token (Linear Head)", "results_multilayer_slq_backbone_last_token_linear.json"),
+    # Nhóm SLQ Baseline gốc
+    ("Baseline SLQ (Layer 24, Mean)", "results_multilayer_slq_baseline_q20.json"),
+    # Nhóm 4 layer cuối
     ("4 Layer cuối + Mean", "results_multilayer_slq_last4_mean_q20.json"),
     ("4 Layer cuối + MLP", "results_multilayer_slq_last4_mlp_q20.json"),
     ("4 Layer cuối + Residual", "results_multilayer_slq_last4_residual_q20.json"),
-    # 4 layer cách đều
+    # Nhóm 4 layer cách đều
     ("4 Layer cách đều + Mean", "results_multilayer_slq_spaced_mean_q20.json"),
     ("4 Layer cách đều + MLP", "results_multilayer_slq_spaced_mlp_q20.json"),
     ("4 Layer cách đều + Residual", "results_multilayer_slq_spaced_residual_q20.json"),

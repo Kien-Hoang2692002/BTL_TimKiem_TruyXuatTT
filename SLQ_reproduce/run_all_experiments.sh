@@ -2,8 +2,10 @@
 set -e
 
 # ==============================================================================
-# Script tự động chạy trọn gói 7 thí nghiệm SLQ trên NVIDIA A100:
-# 1. Baseline SLQ (Layer 24, Mean)
+# Script tự động chạy trọn gói các thí nghiệm SLQ & Đối chứng trên NVIDIA A100:
+# 0a. Đối chứng 1: Backbone Last Token (Zero-shot, không train)
+# 0b. Đối chứng 2: Backbone Last Token + Linear Head (Train 5 epochs, Table 5 bài báo)
+# 1. Baseline SLQ (Layer 24, Mean Pooling, 20 queries)
 # 2. 4 Layer cuối + Mean
 # 3. 4 Layer cuối + Concat 4 layer -> MLP
 # 4. 4 Layer cuối + Residual (Concat 3 layer -> MLP * alpha + Layer cuối)
@@ -27,7 +29,7 @@ WORKERS=8
 CACHE_FILE=${2:-"coco_train2017_vit_cache.pt"}
 
 echo "=================================================================="
-echo "    BẮT ĐẦU CHẠY 7 THÍ NGHIỆM SLQ VỚI SIÊU THAM SỐ BÀI BÁO GỐC   "
+echo "  BẮT ĐẦU CHUỖI THÍ NGHIỆM ĐỐI CHỨNG & CẢI TIẾN MULTI-LAYER SLQ  "
 echo "=================================================================="
 echo "COCO Root            : $COCO_ROOT"
 echo "Cache File           : $CACHE_FILE"
@@ -44,12 +46,34 @@ if [ ! -f "$CACHE_FILE" ]; then
     python precompute_vit.py --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --out "$CACHE_FILE" --batch_size "$BATCH_SIZE"
 fi
 
-# 1. BASELINE (Tái hiện kết quả gốc: 1 layer 24, mean pooling)
+# =================== NHÓM ĐỐI CHỨNG: BACKBONE LAST TOKEN ===================
+
+# 0a. ĐỐI CHỨNG 1: Backbone Last Token (Zero-shot, không huấn luyện)
+echo -e "\n>>> [0a] ĐỐI CHỨNG 1: BACKBONE LAST TOKEN (ZERO-SHOT)..."
+python slq_multilayer.py eval \
+    --data flickr,coco \
+    --num_queries 0 --layers 24 --head_type none --queries init \
+    --batch_size "$BATCH_SIZE" \
+    --out backbone_last_token_zeroshot.pt \
+    --wandb_run_name "exp0a_backbone_last_token_zeroshot"
+
+# 0b. ĐỐI CHỨNG 2: Backbone Last Token + Linear Head (Huấn luyện 5 epochs chuẩn Table 5 bài báo)
+echo -e "\n>>> [0b] ĐỐI CHỨNG 2: BACKBONE LAST TOKEN + LINEAR HEAD (5 Epochs, Batch 1024)..."
+python slq_multilayer.py train \
+    --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
+    --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --num_queries 0 --layers 24 --head_type linear --lr "$LR" --epochs "$EPOCHS" \
+    --out slq_backbone_last_token_linear.pt \
+    --wandb_run_name "exp0b_backbone_last_token_linear"
+
+# =================== SLQ BASELINE (TÁI HIỆN BÀI BÁO GỐC) ===================
+
+# 1. BASELINE (Tái hiện kết quả gốc: 1 layer 24, mean pooling, 20 queries)
 echo -e "\n>>> [1/7] CHẠY BASELINE SLQ (Layer 24, Mean, 5 Epochs, Batch 1024)..."
 python slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
-    --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
+    --num_queries 20 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_baseline_q20.pt \
     --wandb_run_name "exp1_baseline_l24"
 
