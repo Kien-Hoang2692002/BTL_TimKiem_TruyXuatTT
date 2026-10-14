@@ -218,6 +218,9 @@ class ResidualRefinementHead(nn.Module):
 if torch.cuda.is_available():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
 
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
@@ -239,7 +242,7 @@ class SLQMultiLayerEncoder(nn.Module):
         self.head_type = head_type.lower()
         self.vit_chunk_size = vit_chunk_size
 
-        # Load MLLM và đóng băng hoàn toàn
+        # Load MLLM và đóng băng hoàn toàn (mặc định sdpa)
         try:
             self.mllm = AutoModel.from_pretrained(
                 MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
@@ -252,10 +255,16 @@ class SLQMultiLayerEncoder(nn.Module):
             ).to(device).eval()
         except Exception as e:
             print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
-            self.mllm = AutoModel.from_pretrained(
-                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
-                trust_remote_code=True,
-            ).to(device).eval()
+            try:
+                self.mllm = AutoModel.from_pretrained(
+                    MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
+                    attn_implementation=attn_implementation, trust_remote_code=True,
+                ).to(device).eval()
+            except TypeError:
+                self.mllm = AutoModel.from_pretrained(
+                    MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
+                    trust_remote_code=True,
+                ).to(device).eval()
 
         self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
         self.tok.padding_side = "left"
