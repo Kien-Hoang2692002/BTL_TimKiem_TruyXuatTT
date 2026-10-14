@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 results_kaggle/output.json
+Miniconda3*.sh
+get-pip.py
