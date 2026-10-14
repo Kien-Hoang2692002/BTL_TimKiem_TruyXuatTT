@@ -75,12 +75,24 @@ def main():
     parser.add_argument("--out", default="coco_vit_20k.pt", help="File đầu ra lưu features")
     args = parser.parse_args()
 
-    if torch.cuda.is_available():
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "\n[LỖI NGHIÊM TRỌNG] KHÔNG TÌM THẤY GPU CUDA!\n"
+            "PyTorch không thể khởi tạo GPU (Driver NVIDIA trên máy không tương thích với bản PyTorch đang cài).\n"
+            "Chạy trên CPU chỉ đạt ~0.7 ảnh/s (mất >45 tiếng cho 118k ảnh)!\n\n"
+            "CÁCH KHẮC PHỤC NHANH TRÊN SERVER:\n"
+            "1. Kiểm tra phiên bản CUDA của Driver: chạy lệnh `nvidia-smi`\n"
+            "2. Cài lại PyTorch phù hợp với Driver (thường là CUDA 12.1 hoặc 11.8):\n"
+            "   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall\n"
+            "3. Kiểm tra lại bằng lệnh:\n"
+            "   python -c \"import torch; print('CUDA OK:', torch.cuda.is_available(), torch.cuda.get_device_name(0))\"\n"
+        )
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if (device == "cuda" and torch.cuda.is_bf16_supported()) else torch.float32
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    device = "cuda"
+    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
 
     print(f"Khởi tạo InternVL3-1B trên {device} ({dtype})...")
     try:
