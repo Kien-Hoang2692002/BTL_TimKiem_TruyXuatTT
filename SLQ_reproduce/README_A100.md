@@ -115,7 +115,28 @@ python slq_multilayer.py train \
 
 ---
 
-## 5. Tùy chỉnh tham số nâng cao trên A100
+## 5. Theo dõi Huấn luyện & Đánh giá trên Wandb (Weights & Biases)
+
+Hệ thống đã được tích hợp logging tự động lên Wandb:
+- **Tự động kích hoạt**: Nếu trong file `.env` hoặc biến môi trường có `WANDB_API_KEY`, script sẽ tự động tạo run và đẩy thông số lên Wandb.
+- **Các metrics được ghi nhận trực quan theo thời gian thực**:
+  - `train/loss`: Loss hàm Contrastive InfoNCE qua từng step.
+  - `train/tau`: Nhiệt độ logit scale $\tau$ học được.
+  - `train/lr`: Learning rate schedule (Warmup + Cosine Decay).
+  - `train/alpha`: Trọng số $\alpha$ của Residual Refinement Head qua các step.
+  - `eval/flickr_i2t_r1/r5/r10` và `eval/flickr_t2i_r1/r5/r10`: Kết quả Recall trên Flickr30K.
+  - `eval/coco_i2t_r1/r5/r10` và `eval/coco_t2i_r1/r5/r10`: Kết quả Recall trên COCO-5K.
+
+**Các cờ Wandb tùy biến**:
+- `--wandb_project <tên_project>` (mặc định: `slq-retrieval`)
+- `--wandb_run_name <tên_run>` (nếu không đặt sẽ tự sinh theo tên mô hình và config)
+- `--no_wandb`: Tắt Wandb nếu muốn chạy offline hoàn toàn.
+
+---
+
+## 6. Tùy chỉnh tham số nâng cao trên A100
 - **`--batch_size`**: Trên A100 80GB, có thể nâng lên `128` (hoặc `256` khi dùng cache). Batch size càng lớn thì số lượng in-batch negatives trong contrastive learning càng phong phú, giúp mô hình phân biệt tốt hơn.
 - **`--max_pairs`**: Mặc định là `20000`. Nếu muốn huấn luyện trên toàn bộ ~118k ảnh của COCO 2017, hãy đặt `--max_pairs 0`.
 - **`--epochs`**: Do thời gian train với cache chỉ mất ~20 giây/epoch, bạn có thể dễ dàng thử train `3` hoặc `5` epochs với cosine learning rate decay.
+
+

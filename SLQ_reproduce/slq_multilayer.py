@@ -57,6 +57,32 @@ HF_TEST_SETS = {
 }
 
 
+def load_env():
+    """Tự động nạp biến môi trường từ file .env nếu có."""
+    candidates = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"),
+    ]
+    for env_path in candidates:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
+                break
+            except Exception:
+                pass
+
+
+load_env()
+
+
+
 # ----------------------------------------------------------------------------- tiền xử lý ảnh
 def expand2square(img, bg=(127, 127, 127)):
     w, h = img.size
@@ -510,6 +536,36 @@ def train(args):
     total_param_count = sum(p.numel() for p in trainable_params)
     print(f"Tổng số tham số cần học: {total_param_count:,}")
 
+    # Khởi tạo Wandb nếu được bật
+    wandb_run = None
+    if args.use_wandb and not args.no_wandb:
+        try:
+            import wandb
+            run_name = args.wandb_run_name or f"slq_{args.head_type}_layers{str(args.layers).replace(',', '_')}_bs{args.batch_size}"
+            wandb_run = wandb.init(
+                project=args.wandb_project,
+                entity=args.wandb_entity,
+                name=run_name,
+                config={
+                    "model_id": MODEL_ID,
+                    "num_queries": args.num_queries,
+                    "layers": args.layers,
+                    "head_type": args.head_type,
+                    "batch_size": args.batch_size,
+                    "lr": args.lr,
+                    "epochs": args.epochs,
+                    "max_pairs": args.max_pairs,
+                    "seed": args.seed,
+                    "cache_file": args.cache_file,
+                    "attn_implementation": args.attn_implementation,
+                    "total_param_count": total_param_count,
+                }
+            )
+            print(f"Đã kết nối Wandb: Project='{args.wandb_project}' | Run='{run_name}'")
+        except Exception as e:
+            print(f"Cảnh báo: Không thể khởi tạo Wandb ({e}). Tiếp tục huấn luyện offline.")
+            wandb_run = None
+
     # Áp dụng weight_decay nhỏ cho Head nếu dùng MLP/Linear/CrossAttn/Residual
     if model.head is not None and model.head_type in ("mlp", "linear", "cross_attn", "attention", "residual"):
         param_groups = [
@@ -563,11 +619,36 @@ def train(args):
                       f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
                       f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
 
+            if wandb_run is not None:
+                log_data = {
+                    "train/loss": loss.item(),
+                    "train/tau": model.logit_scale.item(),
+                    "train/lr": sched.get_last_lr()[0],
+                    "train/step": step,
+                    "train/epoch": ep + (step % len(dl)) / max(1, len(dl)),
+                }
+                if model.head_type == "residual" and model.head is not None:
+                    log_data["train/alpha"] = model.head.alpha.item()
+                elif model.head_type == "weighted" and model.head is not None:
+                    w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                    for idx, layer_idx in enumerate(model.layers):
+                        log_data[f"weights/layer_{layer_idx}"] = float(w_probs[idx])
+                wandb.log(log_data, step=step)
+
             if args.save_every and step % args.save_every == 0:
                 model.save_queries(args.out)
 
     model.save_queries(args.out)
     print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
+
+    if args.eval_after_train:
+        print("\n=== Đánh giá mô hình ngay sau huấn luyện ===")
+        run_evaluation(model, args, wandb_run=wandb_run)
+
+    if wandb_run is not None:
+        wandb.summary["train/final_loss"] = loss.item()
+        wandb.summary["train/total_steps"] = total_steps
+        wandb.finish()
 
 
 # ----------------------------------------------------------------------------- đánh giá
@@ -598,17 +679,7 @@ def recall(scores, positive, ks=(1, 5, 10)):
     return res
 
 
-def evaluate(args):
-    layers = [int(x.strip()) for x in args.layers.split(",")]
-    model = SLQMultiLayerEncoder(
-        num_queries=args.num_queries,
-        layers=layers,
-        head_type=args.head_type,
-        attn_implementation=args.attn_implementation,
-    )
-    if args.queries != "init":
-        model.load_queries(args.queries)
-
+def run_evaluation(model, args, wandb_run=None):
     results = {}
     for name in args.data.split(","):
         print(f"== Đánh giá tập: {name}")
@@ -624,11 +695,56 @@ def evaluate(args):
         print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
         print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
 
-    tag = os.path.splitext(os.path.basename(args.queries))[0]
+    if wandb_run is not None:
+        import wandb
+        eval_metrics = {}
+        for ds_name, m in results.items():
+            for k in (1, 5, 10):
+                eval_metrics[f"eval/{ds_name}_i2t_r{k}"] = m["I2T"][k]
+                eval_metrics[f"eval/{ds_name}_t2i_r{k}"] = m["T2I"][k]
+        wandb.log(eval_metrics)
+        for k, v in eval_metrics.items():
+            wandb.summary[k] = v
+
+    tag = os.path.splitext(os.path.basename(args.queries if args.queries != "init" else args.out))[0]
     out_filename = f"results_multilayer_{tag}.json"
     with open(out_filename, "w") as f:
         json.dump(results, f, indent=2)
     print(f"Đã ghi kết quả đánh giá vào {out_filename}")
+    return results
+
+
+def evaluate(args):
+    layers = [int(x.strip()) for x in args.layers.split(",")]
+    model = SLQMultiLayerEncoder(
+        num_queries=args.num_queries,
+        layers=layers,
+        head_type=args.head_type,
+        attn_implementation=args.attn_implementation,
+    )
+    if args.queries != "init":
+        model.load_queries(args.queries)
+
+    wandb_run = None
+    if args.use_wandb and not args.no_wandb:
+        try:
+            import wandb
+            run_name = args.wandb_run_name or f"eval_{os.path.splitext(os.path.basename(args.queries))[0]}"
+            wandb_run = wandb.init(
+                project=args.wandb_project,
+                entity=args.wandb_entity,
+                name=run_name,
+                job_type="eval",
+                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type}
+            )
+        except Exception:
+            wandb_run = None
+
+    run_evaluation(model, args, wandb_run=wandb_run)
+
+    if wandb_run is not None:
+        import wandb
+        wandb.finish()
 
 
 if __name__ == "__main__":
@@ -654,6 +770,16 @@ if __name__ == "__main__":
     ap.add_argument("--data", default="flickr,coco")
     ap.add_argument("--queries", default="init", help="'init' = chưa train, hoặc đường dẫn file .pt")
     ap.add_argument("--custom_csv")
+    # wandb logging
+    ap.add_argument("--use_wandb", action="store_true", default=bool(os.environ.get("WANDB_API_KEY")),
+                    help="Bật logging lên Weights & Biases (tự động bật nếu có WANDB_API_KEY)")
+    ap.add_argument("--no_wandb", action="store_true", help="Tắt logging Wandb ngay cả khi có API key")
+    ap.add_argument("--wandb_project", default="slq-retrieval", help="Tên Wandb project")
+    ap.add_argument("--wandb_entity", default=None, help="Tên user/entity Wandb (tùy chọn)")
+    ap.add_argument("--wandb_run_name", default=None, help="Tên run trên Wandb")
+    ap.add_argument("--eval_after_train", action="store_true", default=True, help="Tự động đánh giá ngay sau khi train")
+    ap.add_argument("--no_eval_after_train", action="store_false", dest="eval_after_train", help="Không đánh giá sau khi train")
+
     for i in range(len(sys.argv) - 1):
         if sys.argv[i] == "--layers" and sys.argv[i + 1].startswith("-") and not sys.argv[i + 1].startswith("--"):
             sys.argv[i] = f"--layers={sys.argv[i + 1]}"
@@ -662,5 +788,6 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     train(args) if args.mode == "train" else evaluate(args)
+
 
 

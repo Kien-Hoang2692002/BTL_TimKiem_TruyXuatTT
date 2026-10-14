@@ -33,6 +33,7 @@ echo "Head Type      : $HEAD_TYPE (Residual Refinement)"
 echo "Batch Size     : $BATCH_SIZE"
 echo "Max Pairs      : $MAX_PAIRS"
 echo "Output Weight  : $CHECKPOINT"
+echo "Wandb Logging  : Tự động kết nối nếu có WANDB_API_KEY trong .env"
 echo "=========================================================="
 
 # Kiểm tra GPU
@@ -42,7 +43,8 @@ fi
 
 # Bước 1: Huấn luyện với Feature Caching & SDPA
 # (Nếu CACHE_FILE chưa tồn tại, script sẽ tự động trích xuất trước trong ~1-2 phút, sau đó train trong ~20s)
-echo -e "\n>>> BƯỚC 1: BẮT ĐẦU HUẤN LUYỆN..."
+# Đồng thời tự động đánh giá và đẩy toàn bộ đồ thị loss + recall lên Wandb
+echo -e "\n>>> BƯỚC 1: BẮT ĐẦU HUẤN LUYỆN VÀ TỰ ĐỘNG ĐÁNH GIÁ..."
 python slq_multilayer.py train \
     --coco_root "$COCO_ROOT" \
     --max_pairs "$MAX_PAIRS" \
@@ -55,18 +57,11 @@ python slq_multilayer.py train \
     --lr "$LR" \
     --epochs "$EPOCHS" \
     --attn_implementation "sdpa" \
+    --eval_after_train \
     --out "$CHECKPOINT"
-
-# Bước 2: Đánh giá mô hình sau khi huấn luyện trên Flickr30K và COCO-5K
-echo -e "\n>>> BƯỚC 2: ĐÁNH GIÁ (EVALUATION) TRÊN FLICKR30K VÀ COCO-5K..."
-python slq_multilayer.py eval \
-    --data "flickr,coco" \
-    --queries "$CHECKPOINT" \
-    --layers "$LAYERS" \
-    --head_type "$HEAD_TYPE" \
-    --batch_size "$BATCH_SIZE" \
-    --attn_implementation "sdpa"
 
 echo -e "\n=========================================================="
 echo ">>> HOÀN TẤT TẤT CẢ CÁC BƯỚC THÀNH CÔNG!"
 echo "=========================================================="
+
+
