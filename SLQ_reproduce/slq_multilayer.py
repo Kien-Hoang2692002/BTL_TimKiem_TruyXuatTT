@@ -1,0 +1,560 @@
+"""
+Tái hiện & Cải tiến SLQ: Multi-Layer Aggregation + Projection Head (MLP / Linear / Weighted)
+Chạy trên InternVL3-1B, tương thích 1 GPU T4/P100 (Kaggle/Colab) hoặc Ampere+ (L4/A100).
+
+Ý tưởng cải tiến:
+  - Thay vì chỉ lấy mean pooling ở layer cuối cùng (Last Layer), mô hình trích xuất hidden states
+    của N query tokens từ K layers khác nhau (mặc định 4 layers cuối: -4, -3, -2, -1).
+  - Tầng sâu/tầng giữa giữ lại các biểu diễn ngữ nghĩa đa dạng (semantic & syntactic), tránh việc
+    bị thiên lệch bởi riêng layer cuối (vốn tối ưu cho next-token prediction).
+  - Các query representations từ K layers được tổng hợp qua một Projection Head:
+      + 'mlp' (mặc định): Nối K layers [B, K*D] -> Linear(K*D -> D) -> LayerNorm -> GELU -> Linear(D -> D)
+      + 'linear': Nối K layers [B, K*D] -> Linear(K*D -> D)
+      + 'weighted': Trọng số học được (Softmax) qua K layers (không tăng số chiều)
+  - Vẫn giữ nguyên triết lý SLQ: MLLM backbone ĐÓNG BĂNG 100%, chỉ học N query tokens, logit_scale
+    và các tham số của Projection Head. Huấn luyện siêu nhanh, không gây catastrophic forgetting.
+
+Ví dụ sử dụng:
+  # 1. Zero-shot test (chưa huấn luyện):
+  python slq_multilayer.py eval --data flickr --queries init --layers -4,-3,-2,-1 --head_type mlp
+
+  # 2. Huấn luyện với Multi-layer MLP trên COCO 20k cặp:
+  python slq_multilayer.py train --coco_root /kaggle/input/coco-2017-dataset/coco2017 \
+         --max_pairs 20000 --layers -4,-3,-2,-1 --head_type mlp --out slq_multilayer_q20.pt
+
+  # 3. Đánh giá sau huấn luyện trên Flickr và COCO:
+  python slq_multilayer.py eval --data flickr,coco --queries slq_multilayer_q20.pt
+
+  # 4. Huấn luyện biến thể Softmax Weighted Average (cực nhẹ, chỉ thêm K tham số float):
+  python slq_multilayer.py train --coco_root /kaggle/input/coco-2017-dataset/coco2017 \
+         --layers -4,-3,-2,-1 --head_type weighted --out slq_weighted_q20.pt
+"""
+import argparse
+import json
+import math
+import os
+import random
+import sys
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from PIL import Image, ImageFile
+from torch.utils.data import DataLoader, Dataset
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+MODEL_ID = "OpenGVLab/InternVL3-1B"
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+TEMPLATE = "<|im_start|>user\n{input}<|im_end|>\n<|im_start|>assistant\n"
+IMAGE_PROMPT = TEMPLATE.format(input="<img>" + "<IMG_CONTEXT>" * 256 + "</img>")
+HF_TEST_SETS = {
+    "flickr": "hf://datasets/nlphuji/flickr_1k_test_image_text_retrieval@refs%2Fconvert%2Fparquet/TEST/test/*.parquet",
+    "coco": "hf://datasets/nlphuji/mscoco_2014_5k_test_image_text_retrieval@refs%2Fconvert%2Fparquet/TEST/test/*.parquet",
+}
+
+
+# ----------------------------------------------------------------------------- tiền xử lý ảnh
+def expand2square(img, bg=(127, 127, 127)):
+    w, h = img.size
+    if w == h:
+        return img
+    side = max(w, h)
+    out = Image.new(img.mode, (side, side), bg)
+    out.paste(img, ((side - w) // 2, (side - h) // 2))
+    return out
+
+
+def preprocess_image(img):
+    img = expand2square(img.convert("RGB"))
+    x = torch.from_numpy(np.array(img)).float() / 255
+    x = (x - torch.tensor(IMAGENET_MEAN)) / torch.tensor(IMAGENET_STD)
+    x = x.permute(2, 0, 1)[None]
+    return F.interpolate(x, size=(448, 448), mode="bilinear")[0]
+
+
+# ----------------------------------------------------------------------------- các loại Head tổng hợp
+class MultiLayerMLPHead(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, out_dim),
+            nn.LayerNorm(out_dim),
+            nn.GELU(),
+            nn.Linear(out_dim, out_dim),
+        )
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class LinearProjectorHead(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.proj = nn.Linear(in_dim, out_dim)
+        nn.init.xavier_uniform_(self.proj.weight)
+        if self.proj.bias is not None:
+            nn.init.zeros_(self.proj.bias)
+
+    def forward(self, x):
+        return self.proj(x)
+
+
+class LearnableLayerWeighting(nn.Module):
+    def __init__(self, num_layers):
+        super().__init__()
+        # Khởi tạo trọng số bằng nhau cho mọi tầng (softmax ban đầu là đều)
+        self.weights = nn.Parameter(torch.zeros(num_layers))
+
+    def forward(self, layer_tensors):
+        # layer_tensors: list gồm K tensors, mỗi tensor có shape [B, D]
+        stacked = torch.stack(layer_tensors, dim=1)  # [B, K, D]
+        probs = F.softmax(self.weights, dim=0).view(1, -1, 1)  # [1, K, 1]
+        return (stacked * probs).sum(dim=1)  # [B, D]
+
+
+class CrossAttentionLayerPooling(nn.Module):
+    """Cách 3: Query Cross-Attention pooling qua các tầng (Perceiver-style)."""
+    def __init__(self, dim, num_heads=4):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, 1, dim) / math.sqrt(dim))
+        self.mha = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, dim),
+        )
+
+    def forward(self, layer_tensors):
+        # layer_tensors: list gồm K tensors, mỗi tensor có shape [B, D]
+        kv = torch.stack(layer_tensors, dim=1)  # [B, K, D]
+        B = kv.size(0)
+        q = self.query.expand(B, -1, -1)  # [B, 1, D]
+        attn_out, _ = self.mha(query=q, key=kv, value=kv)  # [B, 1, D]
+        x = self.norm1(attn_out + q)
+        out = self.norm2(x + self.mlp(x))
+        return out.squeeze(1)  # [B, D]
+
+
+class ResidualRefinementHead(nn.Module):
+    """Cách: Residual Refinement kết hợp tầng cuối cùng với delta từ các tầng khác."""
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, out_dim),
+            nn.LayerNorm(out_dim),
+            nn.GELU(),
+            nn.Linear(out_dim, out_dim),
+        )
+        # Khởi tạo alpha = 0.0 (Zero-Init Residual).
+        # Lúc bắt đầu: h = h_last + 0 * delta = h_last (bảo toàn 100% khả năng của tầng cuối)
+        # Trong quá trình train: alpha tăng dần để bổ sung ngữ nghĩa từ các tầng khác.
+        self.alpha = nn.Parameter(torch.zeros(1))
+
+    def forward(self, layer_tensors):
+        # layer_tensors: list gồm K tensors, tensor cuối cùng là tầng sâu nhất (vd: layer 24)
+        h_last = layer_tensors[-1]
+        concat_h = torch.cat(layer_tensors, dim=-1)
+        delta = self.mlp(concat_h)
+        return h_last + self.alpha * delta
+
+
+# ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
+class SLQMultiLayerEncoder(nn.Module):
+    def __init__(self, num_queries=20, layers=(-4, -3, -2, -1), head_type="mlp", device=None, dtype=None):
+        super().__init__()
+        device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if dtype is None:
+            native_bf16 = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            dtype = torch.bfloat16 if native_bf16 else torch.float32
+        print(f"Device: {device} | Dtype: {dtype} | Layers: {layers} | Head: {head_type}")
+
+        from transformers import AutoModel, AutoTokenizer
+
+        self.device, self.dtype = device, dtype
+        self.num_queries = num_queries
+        self.layers = tuple(layers)
+        self.head_type = head_type.lower()
+
+        # Load MLLM và đóng băng hoàn toàn
+        self.mllm = AutoModel.from_pretrained(
+            MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
+            use_flash_attn=False, trust_remote_code=True,
+        ).to(device).eval()
+        self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
+        self.tok.padding_side = "left"
+        self.img_ctx_id = self.tok.convert_tokens_to_ids("<IMG_CONTEXT>")
+        for p in self.mllm.parameters():
+            p.requires_grad = False
+
+        D = self.mllm.language_model.config.hidden_size
+        self.hidden_dim = D
+
+        # N Query tokens học được (lưu ở float32 để cập nhật gradient ổn định)
+        self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
+        self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device))
+        self.backbone = self.mllm.language_model.model  # Qwen2Model
+
+        K = len(self.layers)
+        if K == 1 and self.layers[0] in (-1, self.mllm.language_model.config.num_hidden_layers):
+            # Nếu chỉ chọn 1 layer cuối, giữ nguyên dạng mean pooling thuần như SLQ gốc
+            self.head = None
+        elif self.head_type == "mlp":
+            self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device)
+        elif self.head_type == "linear":
+            self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device)
+        elif self.head_type == "weighted":
+            self.head = LearnableLayerWeighting(num_layers=K).to(device)
+        elif self.head_type in ("cross_attn", "attention"):
+            self.head = CrossAttentionLayerPooling(dim=D).to(device)
+        elif self.head_type == "residual":
+            self.head = ResidualRefinementHead(in_dim=K * D, out_dim=D).to(device)
+        else:
+            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mlp', 'linear', 'weighted', 'cross_attn', hoặc 'residual'")
+
+    def _run(self, embeds, mask):
+        B = embeds.size(0)
+        q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+        embeds = torch.cat([embeds, q], dim=1)
+        mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
+
+        # Trích xuất hidden states từ toàn bộ các layer
+        outputs = self.backbone(
+            inputs_embeds=embeds,
+            attention_mask=mask,
+            use_cache=False,
+            output_hidden_states=True
+        )
+        all_hidden_states = outputs.hidden_states  # Tuple gồm (embed_out, layer_0, ..., layer_last)
+
+        # Lấy hidden states của N queries ở các layer được chỉ định
+        layer_embeds = []
+        for l_idx in self.layers:
+            # l_idx có thể âm (vd -1 là last layer, -2 là áp chót...)
+            h_layer = all_hidden_states[l_idx]
+            # Cắt N vị trí query cuối cùng và mean pooling -> [B, D]
+            q_mean = h_layer[:, -q.size(1):].float().mean(dim=1)
+            layer_embeds.append(q_mean)
+
+        # Tổng hợp qua Head
+        if self.head is None:
+            h = layer_embeds[0]
+        elif self.head_type in ("weighted", "cross_attn", "attention", "residual"):
+            h = self.head(layer_embeds)
+        else:  # 'mlp' hoặc 'linear'
+            concat_h = torch.cat(layer_embeds, dim=-1)  # [B, K * D]
+            h = self.head(concat_h)  # [B, D]
+
+        return F.normalize(h, dim=-1)
+
+    def encode_text(self, texts):
+        enc = self.tok([TEMPLATE.format(input=t) for t in texts], return_tensors="pt",
+                       padding=True, truncation=True, max_length=128).to(self.device)
+        emb = self.backbone.get_input_embeddings()(enc.input_ids)
+        return self._run(emb, enc.attention_mask)
+
+    def encode_image(self, pixels):
+        B = pixels.size(0)
+        enc = self.tok([IMAGE_PROMPT] * B, return_tensors="pt").to(self.device)
+        emb = self.backbone.get_input_embeddings()(enc.input_ids)
+        with torch.no_grad():
+            chunk_size = 16
+            vit_list = []
+            for i in range(0, B, chunk_size):
+                chunk_pixels = pixels[i:i + chunk_size].to(self.device, self.dtype)
+                vit_list.append(self.mllm.extract_feature(chunk_pixels))
+            vit = torch.cat(vit_list, dim=0)
+        emb = emb.clone()
+        emb[enc.input_ids == self.img_ctx_id] = vit.reshape(-1, vit.size(-1)).to(emb.dtype)
+        return self._run(emb, enc.attention_mask)
+
+    def get_trainable_params(self):
+        params = [self.meta_queries, self.logit_scale]
+        if self.head is not None:
+            params.extend(list(self.head.parameters()))
+        return params
+
+    def save_queries(self, path):
+        ck = {
+            "meta_queries": self.meta_queries.detach().cpu(),
+            "logit_scale": self.logit_scale.detach().cpu(),
+            "layers": self.layers,
+            "head_type": self.head_type,
+            "num_queries": self.num_queries,
+        }
+        if self.head is not None:
+            ck["head_state_dict"] = self.head.state_dict()
+        torch.save(ck, path)
+
+    def load_queries(self, path):
+        ck = torch.load(path, map_location="cpu")
+        self.meta_queries.data.copy_(ck["meta_queries"])
+        self.logit_scale.data.copy_(ck["logit_scale"])
+        if "head_state_dict" in ck and self.head is not None:
+            self.head.load_state_dict(ck["head_state_dict"])
+            print("Đã nạp trọng số Head projector thành công.")
+
+
+# ----------------------------------------------------------------------------- tập dữ liệu
+class PairDataset(Dataset):
+    def __init__(self, pairs, image_root=""):
+        self.pairs, self.root = pairs, image_root
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, i):
+        path, cap = self.pairs[i]
+        try:
+            return preprocess_image(Image.open(os.path.join(self.root, path))), cap
+        except Exception as e:
+            print("Bỏ qua ảnh lỗi:", path, e)
+            return None
+
+
+def collate(batch):
+    batch = [b for b in batch if b is not None]
+    return torch.stack([b[0] for b in batch]), [b[1] for b in batch]
+
+
+def find_coco(coco_root):
+    ann_path = img_dir = None
+    for base in [coco_root, "/kaggle/input"]:
+        if not base or not os.path.isdir(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            if ann_path is None and "captions_train2017.json" in files:
+                ann_path = os.path.join(root, "captions_train2017.json")
+            if img_dir is None and os.path.basename(root) == "train2017" and any(f.endswith(".jpg") for f in files[:50]):
+                img_dir = root
+            if ann_path and img_dir:
+                return ann_path, img_dir
+    raise FileNotFoundError(
+        f"Không tìm thấy COCO (annotations={ann_path}, train2017={img_dir}). "
+        "Hãy thêm dataset 'awsaf49/coco-2017-dataset' vào notebook.")
+
+
+def load_coco_train_pairs(coco_root, max_pairs, seed):
+    ann_path, img_dir = find_coco(coco_root)
+    print("COCO annotations:", ann_path, "| ảnh:", img_dir)
+    ann = json.load(open(ann_path))
+    id2file = {im["id"]: im["file_name"] for im in ann["images"]}
+    random.Random(seed).shuffle(ann["annotations"])
+    seen, pairs = set(), []
+    for a in ann["annotations"]:
+        if a["image_id"] in seen:
+            continue
+        seen.add(a["image_id"])
+        pairs.append((os.path.join(img_dir, id2file[a["image_id"]]), a["caption"].strip()))
+        if max_pairs and len(pairs) >= max_pairs:
+            break
+    return pairs
+
+
+def load_test_set(name, args):
+    if name in HF_TEST_SETS:
+        from datasets import load_dataset
+        ds = load_dataset("parquet", data_files=HF_TEST_SETS[name], split="train")
+        images, texts, img_of_text = [], [], []
+        for i, ex in enumerate(ds):
+            images.append(ex["image"])
+            for c in ex["caption"][:5]:
+                texts.append(c)
+                img_of_text.append(i)
+        return images, texts, img_of_text
+    if name == "custom":
+        import pandas as pd
+        f = args.custom_csv
+        df = pd.read_json(f) if f.endswith(".json") else pd.read_csv(f)
+        uniq = list(dict.fromkeys(df["image"]))
+        idx = {p: i for i, p in enumerate(uniq)}
+        images = [os.path.join(args.image_root, p) for p in uniq]
+        return images, df["caption"].astype(str).tolist(), [idx[p] for p in df["image"]]
+    raise ValueError(name)
+
+
+# ----------------------------------------------------------------------------- huấn luyện
+def train(args):
+    torch.manual_seed(args.seed)
+    layers = [int(x.strip()) for x in args.layers.split(",")]
+    model = SLQMultiLayerEncoder(
+        num_queries=args.num_queries,
+        layers=layers,
+        head_type=args.head_type,
+    )
+    model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    model.backbone.train()
+
+    pairs = load_coco_train_pairs(args.coco_root, args.max_pairs, args.seed)
+    print(f"Số cặp huấn luyện: {len(pairs)}")
+    dl = DataLoader(
+        PairDataset(pairs),
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.workers,
+        collate_fn=collate,
+        drop_last=True,
+        pin_memory=torch.cuda.is_available()
+    )
+
+    trainable_params = model.get_trainable_params()
+    total_param_count = sum(p.numel() for p in trainable_params)
+    print(f"Tổng số tham số cần học: {total_param_count:,}")
+
+    # Áp dụng weight_decay nhỏ cho Head nếu dùng MLP/Linear/CrossAttn/Residual
+    if model.head is not None and model.head_type in ("mlp", "linear", "cross_attn", "attention", "residual"):
+        param_groups = [
+            {"params": [model.meta_queries, model.logit_scale], "weight_decay": 0.0},
+            {"params": list(model.head.parameters()), "weight_decay": 1e-3},
+        ]
+    else:
+        param_groups = [{"params": trainable_params, "weight_decay": 0.0}]
+
+    opt = torch.optim.AdamW(param_groups, lr=args.lr)
+    total_steps = args.epochs * len(dl)
+    warm = max(1, int(0.03 * total_steps))
+    sched = torch.optim.lr_scheduler.LambdaLR(
+        opt,
+        lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm)))
+    )
+
+    step, t0 = 0, time.time()
+    for ep in range(args.epochs):
+        for pixels, caps in dl:
+            zi = model.encode_image(pixels)
+            zt = model.encode_text(caps)
+            if not torch.isfinite(zi).all() or not torch.isfinite(zt).all():
+                raise RuntimeError("Embedding bị NaN/Inf - dừng huấn luyện")
+
+            logits = zi @ zt.t() / model.logit_scale.clamp(min=0.01)
+            labels = torch.arange(len(zi), device=zi.device)
+            loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
+
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
+            opt.step()
+            sched.step()
+            step += 1
+
+            if step % 10 == 0 or step == 1:
+                el = time.time() - t0
+                extra_info = ""
+                if model.head_type == "weighted" and model.head is not None:
+                    w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                    extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
+                elif model.head_type == "residual" and model.head is not None:
+                    extra_info = f" alpha: {model.head.alpha.item():.4f}"
+                print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
+                      f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
+                      f"| {el / 60:.1f} phút, còn ~{el / step * (total_steps - step) / 60:.1f} phút", flush=True)
+
+            if args.save_every and step % args.save_every == 0:
+                model.save_queries(args.out)
+
+    model.save_queries(args.out)
+    print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
+
+
+# ----------------------------------------------------------------------------- đánh giá
+@torch.no_grad()
+def embed_all(model, items, kind, bs):
+    out = []
+    for i in range(0, len(items), bs):
+        chunk = items[i:i + bs]
+        if kind == "text":
+            out.append(model.encode_text(chunk).cpu())
+        else:
+            imgs = [Image.open(x) if isinstance(x, str) else x for x in chunk]
+            out.append(model.encode_image(torch.stack([preprocess_image(im) for im in imgs])).cpu())
+        print(f"\r  {kind}: {min(i + bs, len(items))}/{len(items)}", end="", flush=True)
+    print()
+    out = torch.cat(out)
+    bad = (~torch.isfinite(out)).any(1).sum().item()
+    if bad:
+        raise RuntimeError(f"{bad}/{len(out)} embedding {kind} bị NaN/Inf - kết quả vô nghĩa")
+    return out
+
+
+def recall(scores, positive, ks=(1, 5, 10)):
+    res = {}
+    for k in ks:
+        top = scores.topk(min(k, scores.size(1)), dim=1).indices
+        res[k] = positive.gather(1, top).any(1).float().mean().item() * 100
+    return res
+
+
+def evaluate(args):
+    layers = [int(x.strip()) for x in args.layers.split(",")]
+    model = SLQMultiLayerEncoder(
+        num_queries=args.num_queries,
+        layers=layers,
+        head_type=args.head_type,
+    )
+    if args.queries != "init":
+        model.load_queries(args.queries)
+
+    results = {}
+    for name in args.data.split(","):
+        print(f"== Đánh giá tập: {name}")
+        images, texts, img_of_text = load_test_set(name, args)
+        print(f"  {len(images)} ảnh, {len(texts)} caption")
+        zt = embed_all(model, texts, "text", args.batch_size * 3)
+        zi = embed_all(model, images, "image", args.batch_size)
+        s = zt @ zi.t()  # [T, I]
+        pos = torch.zeros_like(s, dtype=torch.bool)
+        pos[torch.arange(len(texts)), torch.tensor(img_of_text)] = True
+        t2i, i2t = recall(s, pos), recall(s.t(), pos.t())
+        results[name] = {"T2I": t2i, "I2T": i2t}
+        print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
+        print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
+
+    tag = os.path.splitext(os.path.basename(args.queries))[0]
+    out_filename = f"results_multilayer_{tag}.json"
+    with open(out_filename, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Đã ghi kết quả đánh giá vào {out_filename}")
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("mode", choices=["train", "eval"])
+    ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20)")
+    ap.add_argument("--layers", default="-4,-3,-2,-1", help="Các layers cần trích xuất, cách nhau bởi dấu phẩy, vd: '-4,-3,-2,-1'")
+    ap.add_argument("--head_type", default="mlp", choices=["mlp", "linear", "weighted", "cross_attn", "residual"], help="Kiểu projector: 'mlp', 'linear', 'weighted', 'cross_attn', hoặc 'residual'")
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--workers", type=int, default=4)
+    # train
+    ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
+    ap.add_argument("--max_pairs", type=int, default=20000, help="0 = toàn bộ ~118k ảnh COCO")
+    ap.add_argument("--epochs", type=int, default=1)
+    ap.add_argument("--lr", type=float, default=5e-4)
+    ap.add_argument("--save_every", type=int, default=100)
+    ap.add_argument("--out", default="slq_multilayer_q20.pt")
+    # eval
+    ap.add_argument("--data", default="flickr")
+    ap.add_argument("--queries", default="init", help="'init' = chưa train, hoặc đường dẫn file .pt")
+    ap.add_argument("--custom_csv")
+    for i in range(len(sys.argv) - 1):
+        if sys.argv[i] == "--layers" and sys.argv[i + 1].startswith("-") and not sys.argv[i + 1].startswith("--"):
+            sys.argv[i] = f"--layers={sys.argv[i + 1]}"
+            del sys.argv[i + 1]
+            break
+    args = ap.parse_args()
+
+    train(args) if args.mode == "train" else evaluate(args)
+
