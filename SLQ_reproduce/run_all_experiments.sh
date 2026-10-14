@@ -40,6 +40,21 @@ echo "Batch Size hiệu dụng : $BATCH_SIZE x $GRAD_ACCUM = $((BATCH_SIZE * GRA
 echo "Wandb Tracking       : slq-retrieval"
 echo "=================================================================="
 
+# Tự động tải dữ liệu COCO nếu chưa có
+COCO_ANN_FOUND=0
+for cand in "$COCO_ROOT/annotations/captions_train2017.json" "$COCO_ROOT/captions_train2017.json"; do
+    if [ -f "$cand" ]; then
+        COCO_ANN_FOUND=1
+        break
+    fi
+done
+
+if [ "$COCO_ANN_FOUND" -eq 0 ]; then
+    echo -e "\n>>> CHƯA TÌM THẤY DỮ LIỆU COCO TẠI '$COCO_ROOT'!"
+    echo ">>> ĐANG TỰ ĐỘNG TẢI DỮ LIỆU QUA SCRIPT download_coco.sh..."
+    bash download_coco.sh "$COCO_ROOT"
+fi
+
 # 0. Trích xuất ViT Feature Cache một lần duy nhất nếu chưa có
 if [ ! -f "$CACHE_FILE" ]; then
     echo -e "\n>>> BƯỚC 0: TRÍCH XUẤT TRƯỚC VIT FEATURES VÀO $CACHE_FILE..."
