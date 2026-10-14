@@ -91,16 +91,34 @@ def main():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    device = "cuda"
+    # Hỗ trợ chạy phân tán trên nhiều GPU (torchrun)
+    is_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
+    if is_ddp:
+        import torch.distributed as dist
+        if not dist.is_initialized():
+            dist.init_process_group("nccl")
+        rank = int(os.environ["RANK"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        world_size = int(os.environ["WORLD_SIZE"])
+        torch.cuda.set_device(local_rank)
+        device = f"cuda:{local_rank}"
+        if rank == 0:
+            print(f"Kích hoạt trích xuất đặc trưng song song trên {world_size} GPU!")
+    else:
+        rank, local_rank, world_size = 0, 0, 1
+        device = "cuda"
+
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
 
-    print(f"Khởi tạo InternVL3-1B trên {device} ({dtype})...")
+    if rank == 0:
+        print(f"Khởi tạo InternVL3-1B trên {device} ({dtype})...")
     try:
         mllm = AutoModel.from_pretrained(
             MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True
         ).to(device).eval()
     except Exception as e:
-        print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
+        if rank == 0:
+            print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
         mllm = AutoModel.from_pretrained(
             MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False, trust_remote_code=True
         ).to(device).eval()
@@ -119,13 +137,17 @@ def main():
         if args.max_pairs and len(paths) >= args.max_pairs:
             break
 
-    print(f"Tổng số ảnh duy nhất cần trích xuất: {len(paths)}")
+    # Phân chia dữ liệu đều cho các GPU
+    my_paths = paths[rank::world_size]
+    if rank == 0:
+        print(f"Tổng số ảnh duy nhất: {len(paths)} | Chia đều cho {world_size} GPUs (~{len(my_paths)} ảnh/GPU)")
+
     cache_dict = {}
     t0 = time.time()
 
     with torch.no_grad():
-        for i in range(0, len(paths), args.batch_size):
-            chunk = paths[i:i + args.batch_size]
+        for i in range(0, len(my_paths), args.batch_size):
+            chunk = my_paths[i:i + args.batch_size]
             pixel_list, valid_paths = [], []
             for p in chunk:
                 try:
@@ -141,15 +163,34 @@ def main():
             for p, f in zip(valid_paths, feats):
                 cache_dict[p] = f
 
-            el = time.time() - t0
-            speed = (i + len(chunk)) / max(1e-5, el)
-            print(f"\r  Tiến độ: {min(i + args.batch_size, len(paths))}/{len(paths)} ảnh "
-                  f"({speed:.1f} ảnh/s) | Đã chạy {el:.1f}s", end="", flush=True)
+            if rank == 0 or not is_ddp:
+                el = time.time() - t0
+                speed = (i + len(chunk)) / max(1e-5, el)
+                print(f"\r  [GPU {local_rank}] Tiến độ: {min(i + args.batch_size, len(my_paths))}/{len(my_paths)} ảnh "
+                      f"({speed:.1f} ảnh/s | Toàn cụm ~{speed * world_size:.1f} ảnh/s) | {el:.1f}s", end="", flush=True)
 
-    print(f"\nHoàn tất trích xuất trong {time.time() - t0:.1f}s. Đang lưu vào {args.out}...")
-    torch.save(cache_dict, args.out)
-    size_gb = os.path.getsize(args.out) / 1e9
-    print(f"Đã lưu thành công {len(cache_dict)} features ({size_gb:.2f} GB) tại {args.out}!")
+    if is_ddp and world_size > 1:
+        shard_file = f"{args.out}.rank{rank}.tmp"
+        torch.save(cache_dict, shard_file)
+        dist.barrier()
+        if rank == 0:
+            print("\n>>> Đang hợp nhất (merge) kết quả từ tất cả các GPU...")
+            full_cache = {}
+            for r in range(world_size):
+                f_shard = f"{args.out}.rank{r}.tmp"
+                shard_data = torch.load(f_shard, map_location="cpu", weights_only=True)
+                full_cache.update(shard_data)
+                if os.path.exists(f_shard):
+                    os.remove(f_shard)
+            torch.save(full_cache, args.out)
+            size_gb = os.path.getsize(args.out) / (1024 ** 3)
+            print(f"Hoàn tất! Đã lưu {len(full_cache)} ảnh vào {args.out} ({size_gb:.2f} GB) trong {time.time() - t0:.1f}s!")
+        dist.barrier()
+    else:
+        print(f"\nHoàn tất trích xuất trong {time.time() - t0:.1f}s. Đang lưu vào {args.out}...")
+        torch.save(cache_dict, args.out)
+        size_gb = os.path.getsize(args.out) / 1e9
+        print(f"Đã lưu thành công {len(cache_dict)} features ({size_gb:.2f} GB) tại {args.out}!")
 
 
 if __name__ == "__main__":

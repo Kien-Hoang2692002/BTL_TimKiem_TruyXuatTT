@@ -68,10 +68,10 @@ if [ "$COCO_ANN_FOUND" -eq 0 ]; then
     bash download_coco.sh "$COCO_ROOT"
 fi
 
-# 2. Trích xuất ViT Feature Cache một lần duy nhất nếu chưa có (dùng GPU 0)
+# 2. Trích xuất ViT Feature Cache một lần duy nhất nếu chưa có (DÙNG CẢ $NUM_GPUS GPU!)
 if [ ! -f "$CACHE_FILE" ]; then
-    echo -e "\n>>> BƯỚC 0: TRÍCH XUẤT TRƯỚC VIT FEATURES VÀO $CACHE_FILE (GPU 0)..."
-    CUDA_VISIBLE_DEVICES=0 python precompute_vit.py \
+    echo -e "\n>>> BƯỚC 0: TRÍCH XUẤT TRƯỚC VIT FEATURES BẰNG CẢ $NUM_GPUS GPU A100..."
+    torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" precompute_vit.py \
         --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --out "$CACHE_FILE" --batch_size "$BATCH_SIZE"
 fi
 
