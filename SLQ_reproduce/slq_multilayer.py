@@ -81,6 +81,16 @@ def load_env():
 
 load_env()
 
+# Vá lỗi tương thích cho transformers >= 4.49 / 5.x với InternVL (AttributeError: all_tied_weights_keys)
+try:
+    from transformers.modeling_utils import PreTrainedModel
+    if not hasattr(PreTrainedModel, "all_tied_weights_keys"):
+        PreTrainedModel.all_tied_weights_keys = property(lambda self: {})
+    if not hasattr(nn.Module, "all_tied_weights_keys"):
+        nn.Module.all_tied_weights_keys = property(lambda self: {})
+except Exception:
+    pass
+
 
 
 # ----------------------------------------------------------------------------- tiền xử lý ảnh
@@ -238,6 +248,12 @@ class SLQMultiLayerEncoder(nn.Module):
         except TypeError:
             self.mllm = AutoModel.from_pretrained(
                 MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
+                trust_remote_code=True,
+            ).to(device).eval()
+        except Exception as e:
+            print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
+            self.mllm = AutoModel.from_pretrained(
+                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
                 trust_remote_code=True,
             ).to(device).eval()
 
