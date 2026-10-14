@@ -171,3 +171,4 @@ echo "=================================================================="
 
 # Xuất bảng tổng hợp kết quả
 python summarize_results.py
+
