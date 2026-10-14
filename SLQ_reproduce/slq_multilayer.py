@@ -225,7 +225,7 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="sdpa", vit_chunk_size=64):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
@@ -242,29 +242,34 @@ class SLQMultiLayerEncoder(nn.Module):
         self.head_type = head_type.lower()
         self.vit_chunk_size = vit_chunk_size
 
-        # Load MLLM và đóng băng hoàn toàn (mặc định sdpa)
-        try:
-            self.mllm = AutoModel.from_pretrained(
-                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
-                attn_implementation=attn_implementation, trust_remote_code=True,
-            ).to(device).eval()
-        except TypeError:
-            self.mllm = AutoModel.from_pretrained(
-                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
-                trust_remote_code=True,
-            ).to(device).eval()
-        except Exception as e:
-            print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
-            try:
-                self.mllm = AutoModel.from_pretrained(
-                    MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
-                    attn_implementation=attn_implementation, trust_remote_code=True,
-                ).to(device).eval()
-            except TypeError:
-                self.mllm = AutoModel.from_pretrained(
-                    MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
-                    trust_remote_code=True,
-                ).to(device).eval()
+        # Nạp MLLM an toàn với cơ chế fallback tự động cho InternVL
+        attn_candidates = [attn_implementation]
+        if "eager" not in attn_candidates:
+            attn_candidates.append("eager")
+        attn_candidates.append(None)
+
+        self.mllm = None
+        last_err = None
+        for low_cpu in [True, False]:
+            for attn in attn_candidates:
+                kwargs = {
+                    "torch_dtype": dtype,
+                    "low_cpu_mem_usage": low_cpu,
+                    "trust_remote_code": True,
+                }
+                if attn is not None:
+                    kwargs["attn_implementation"] = attn
+                try:
+                    self.mllm = AutoModel.from_pretrained(MODEL_ID, **kwargs).to(device).eval()
+                    break
+                except Exception as e:
+                    last_err = e
+                    continue
+            if self.mllm is not None:
+                break
+
+        if self.mllm is None:
+            raise RuntimeError(f"Không thể nạp mô hình {MODEL_ID}: {last_err}")
 
         self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
         self.tok.padding_side = "left"
@@ -917,7 +922,7 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=128, help="Batch size trên GPU (khuyến nghị 128 trên A100)")
     ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
-    ap.add_argument("--attn_implementation", default="sdpa", choices=["sdpa", "eager", "flash_attention_2"], help="Attention backend")
+    ap.add_argument("--attn_implementation", default="eager", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định eager để tương thích InternVL)")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
     ap.add_argument("--max_pairs", type=int, default=20000, help="0 = toàn bộ ~118k ảnh COCO")

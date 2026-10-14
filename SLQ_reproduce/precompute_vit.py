@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--max_pairs", type=int, default=20000, help="Số lượng ảnh cần trích xuất (0 = toàn bộ)")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size trích xuất trên A100 (mặc định 128)")
     parser.add_argument("--workers", type=int, default=8, help="Số luồng CPU nạp ảnh đa tiến trình (mặc định 8)")
-    parser.add_argument("--attn_implementation", default="sdpa", choices=["sdpa", "eager", "flash_attention_2"], help="Attention backend (mặc định sdpa)")
+    parser.add_argument("--attn_implementation", default="eager", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định eager để tương thích InternVL)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", default="coco_vit_20k.pt", help="File đầu ra lưu features")
     args = parser.parse_args()
@@ -141,27 +141,31 @@ def main():
 
     if rank == 0:
         print(f"Khởi tạo InternVL3-1B trên {device} ({dtype}, attn={args.attn_implementation})...")
-    try:
-        mllm = AutoModel.from_pretrained(
-            MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
-            attn_implementation=args.attn_implementation, trust_remote_code=True
-        ).to(device).eval()
-    except TypeError:
-        mllm = AutoModel.from_pretrained(
-            MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True
-        ).to(device).eval()
-    except Exception as e:
-        if rank == 0:
-            print(f"Cảnh báo: load với low_cpu_mem_usage thất bại ({e}), chuyển sang fallback low_cpu_mem_usage=False...")
-        try:
-            mllm = AutoModel.from_pretrained(
-                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False,
-                attn_implementation=args.attn_implementation, trust_remote_code=True
-            ).to(device).eval()
-        except TypeError:
-            mllm = AutoModel.from_pretrained(
-                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=False, trust_remote_code=True
-            ).to(device).eval()
+
+    def load_mllm_safely(model_id, target_dtype, target_device, preferred_attn="eager"):
+        attn_candidates = [preferred_attn]
+        if "eager" not in attn_candidates:
+            attn_candidates.append("eager")
+        attn_candidates.append(None)
+
+        last_err = None
+        for low_cpu in [True, False]:
+            for attn in attn_candidates:
+                kwargs = {
+                    "torch_dtype": target_dtype,
+                    "low_cpu_mem_usage": low_cpu,
+                    "trust_remote_code": True,
+                }
+                if attn is not None:
+                    kwargs["attn_implementation"] = attn
+                try:
+                    return AutoModel.from_pretrained(model_id, **kwargs).to(target_device).eval()
+                except Exception as e:
+                    last_err = e
+                    continue
+        raise RuntimeError(f"Không thể nạp mô hình {model_id}: {last_err}")
+
+    mllm = load_mllm_safely(MODEL_ID, dtype, device, args.attn_implementation)
 
     ann_path, img_dir = find_coco(args.coco_root)
     ann = json.load(open(ann_path))
