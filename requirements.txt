@@ -26,3 +26,6 @@ datasets>=2.18.0
 # Tracking & Trực quan hóa thí nghiệm
 wandb>=0.16.0
 
+# Tải dữ liệu siêu tốc qua Kaggle CLI
+kaggle>=1.6.0
+

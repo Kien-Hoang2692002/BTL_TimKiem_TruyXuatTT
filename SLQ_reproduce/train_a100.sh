@@ -41,6 +41,13 @@ if command -v nvidia-smi &> /dev/null; then
     nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 fi
 
+# Kiểm tra dữ liệu COCO
+if [ ! -f "$CACHE_FILE" ] && [ ! -d "$COCO_ROOT" ]; then
+    echo ">>> Chưa tìm thấy dữ liệu COCO tại $COCO_ROOT và chưa có $CACHE_FILE."
+    echo ">>> Tự động tải nhanh 20.000 ảnh (~2.8GB) qua download_coco.sh..."
+    bash "$(dirname "$0")/download_coco.sh" "$COCO_ROOT" --subset
+fi
+
 # Bước 1: Huấn luyện với Feature Caching & SDPA
 # (Nếu CACHE_FILE chưa tồn tại, script sẽ tự động trích xuất trước trong ~1-2 phút, sau đó train trong ~20s)
 # Đồng thời tự động đánh giá và đẩy toàn bộ đồ thị loss + recall lên Wandb
