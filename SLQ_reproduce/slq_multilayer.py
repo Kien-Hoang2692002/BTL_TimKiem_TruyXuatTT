@@ -537,38 +537,69 @@ def load_test_set(name, args):
 
 # ----------------------------------------------------------------------------- huấn luyện
 def train(args):
-    torch.manual_seed(args.seed)
+    # Phát hiện môi trường Distributed Data Parallel (torchrun)
+    is_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
+    if is_ddp:
+        import torch.distributed as dist
+        import torch.distributed.nn as dist_nn
+        from torch.utils.data.distributed import DistributedSampler
+
+        if not dist.is_initialized():
+            dist.init_process_group("nccl")
+        rank = int(os.environ["RANK"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        world_size = int(os.environ["WORLD_SIZE"])
+        torch.cuda.set_device(local_rank)
+        target_device = f"cuda:{local_rank}"
+        if rank == 0:
+            print(f"Khởi tạo DDP thành công: {world_size} GPUs tham gia huấn luyện.")
+    else:
+        rank, local_rank, world_size = 0, 0, 1
+        target_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    torch.manual_seed(args.seed + rank)
     layers = [int(x.strip()) for x in args.layers.split(",")]
     model = SLQMultiLayerEncoder(
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
         pooling=getattr(args, "pooling", "mean"),
+        device=target_device,
         attn_implementation=args.attn_implementation,
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
 
     pairs = load_coco_train_pairs(args.coco_root, args.max_pairs, args.seed)
-    print(f"Số cặp huấn luyện: {len(pairs)}")
+    if rank == 0:
+        print(f"Số cặp huấn luyện: {len(pairs)}")
 
     cache_dict = None
     if args.cache_file:
         if os.path.isfile(args.cache_file):
-            print(f"Đang nạp ViT feature cache từ {args.cache_file}...")
+            if rank == 0:
+                print(f"Đang nạp ViT feature cache từ {args.cache_file}...")
             t0 = time.time()
             cache_dict = torch.load(args.cache_file, map_location="cpu", weights_only=True)
-            print(f"Đã nạp {len(cache_dict)} cached features trong {time.time() - t0:.2f}s!")
+            if rank == 0:
+                print(f"Đã nạp {len(cache_dict)} cached features trong {time.time() - t0:.2f}s!")
         else:
-            print(f"Cache file {args.cache_file} chưa tồn tại. Bắt đầu precompute...")
-            cache_dict = precompute_coco_features(
-                model, pairs, args.cache_file, batch_size=args.cache_batch_size
-            )
+            if rank == 0:
+                print(f"Cache file {args.cache_file} chưa tồn tại. Bắt đầu precompute...")
+                cache_dict = precompute_coco_features(
+                    model, pairs, args.cache_file, batch_size=args.cache_batch_size
+                )
+            if is_ddp:
+                dist.barrier()
+            if rank != 0:
+                cache_dict = torch.load(args.cache_file, map_location="cpu", weights_only=True)
 
+    sampler = DistributedSampler(PairDataset(pairs, cache_dict=cache_dict), shuffle=True, seed=args.seed) if is_ddp else None
     dl = DataLoader(
         PairDataset(pairs, cache_dict=cache_dict),
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=(sampler is None),
+        sampler=sampler,
         num_workers=args.workers,
         collate_fn=collate,
         drop_last=True,
@@ -579,11 +610,12 @@ def train(args):
 
     trainable_params = model.get_trainable_params()
     total_param_count = sum(p.numel() for p in trainable_params)
-    print(f"Tổng số tham số cần học: {total_param_count:,}")
+    if rank == 0:
+        print(f"Tổng số tham số cần học: {total_param_count:,}")
 
-    # Khởi tạo Wandb nếu được bật
+    # Khởi tạo Wandb nếu được bật (chỉ rank 0)
     wandb_run = None
-    if args.use_wandb and not args.no_wandb:
+    if rank == 0 and args.use_wandb and not args.no_wandb:
         try:
             import wandb
             run_name = args.wandb_run_name or f"slq_{args.head_type}_layers{str(args.layers).replace(',', '_')}_bs{args.batch_size}"
@@ -598,6 +630,8 @@ def train(args):
                     "layers": args.layers,
                     "head_type": args.head_type,
                     "batch_size": args.batch_size,
+                    "world_size": world_size,
+                    "effective_batch_size": args.batch_size * world_size * args.grad_accum_steps,
                     "lr": args.lr,
                     "epochs": args.epochs,
                     "max_pairs": args.max_pairs,
@@ -640,6 +674,8 @@ def train(args):
     step, micro_step, t0 = 0, 0, time.time()
     opt.zero_grad(set_to_none=True)
     for ep in range(args.epochs):
+        if is_ddp and sampler is not None:
+            sampler.set_epoch(ep)
         for items, caps, is_cached in dl:
             if is_cached:
                 zi = model.encode_image_from_vit(items)
@@ -649,81 +685,98 @@ def train(args):
             if not torch.isfinite(zi).all() or not torch.isfinite(zt).all():
                 raise RuntimeError("Embedding bị NaN/Inf - dừng huấn luyện")
 
-            logits = zi @ zt.t() / model.logit_scale.clamp(min=0.01)
-            labels = torch.arange(len(zi), device=zi.device)
-            loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
+            if is_ddp and world_size > 1:
+                all_zi = torch.cat(dist_nn.all_gather(zi), dim=0)
+                all_zt = torch.cat(dist_nn.all_gather(zt), dim=0)
+                logits_i2t = zi @ all_zt.t() / model.logit_scale.clamp(min=0.01)
+                logits_t2i = zt @ all_zi.t() / model.logit_scale.clamp(min=0.01)
+                labels = rank * len(zi) + torch.arange(len(zi), device=zi.device)
+                loss = (F.cross_entropy(logits_i2t, labels) + F.cross_entropy(logits_t2i, labels)) / 2
+            else:
+                logits = zi @ zt.t() / model.logit_scale.clamp(min=0.01)
+                labels = torch.arange(len(zi), device=zi.device)
+                loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
 
             loss_scaled = loss / grad_accum
             loss_scaled.backward()
             micro_step += 1
 
             if micro_step % grad_accum == 0 or micro_step == len(dl):
+                if is_ddp and world_size > 1:
+                    for p in trainable_params:
+                        if p.grad is not None:
+                            dist.all_reduce(p.grad.data, op=dist.ReduceOp.AVG)
                 torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
                 opt.step()
                 sched.step()
                 opt.zero_grad(set_to_none=True)
                 step += 1
 
-                if step % 10 == 0 or step == 1 or step == total_steps:
-                    el = time.time() - t0
-                    extra_info = ""
-                    if model.head_type == "weighted" and model.head is not None:
-                        w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
-                        extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
-                    elif model.head_type == "residual" and model.head is not None:
-                        extra_info = f" alpha: {model.head.alpha.item():.4f}"
-                    step_per_sec = step / max(1e-5, el)
-                    rem_mins = (total_steps - step) / max(1e-5, step_per_sec) / 60
-                    print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
-                          f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
-                          f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
+                if rank == 0:
+                    if step % 10 == 0 or step == 1 or step == total_steps:
+                        el = time.time() - t0
+                        extra_info = ""
+                        if model.head_type == "weighted" and model.head is not None:
+                            w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                            extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
+                        elif model.head_type == "residual" and model.head is not None:
+                            extra_info = f" alpha: {model.head.alpha.item():.4f}"
+                        step_per_sec = step / max(1e-5, el)
+                        rem_mins = (total_steps - step) / max(1e-5, step_per_sec) / 60
+                        print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
+                              f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
+                              f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
 
-                if wandb_run is not None:
-                    log_data = {
-                        "train/loss": loss.item(),
-                        "train/tau": model.logit_scale.item(),
-                        "train/lr": sched.get_last_lr()[0],
-                        "train/step": step,
-                        "train/epoch": ep + (micro_step % len(dl)) / max(1, len(dl)),
-                    }
-                    if model.head_type == "residual" and model.head is not None:
-                        log_data["train/alpha"] = model.head.alpha.item()
-                    elif model.head_type == "weighted" and model.head is not None:
-                        w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
-                        for idx, layer_idx in enumerate(model.layers):
-                            log_data[f"weights/layer_{layer_idx}"] = float(w_probs[idx])
-                    wandb.log(log_data, step=step)
+                    if wandb_run is not None:
+                        log_data = {
+                            "train/loss": loss.item(),
+                            "train/tau": model.logit_scale.item(),
+                            "train/lr": sched.get_last_lr()[0],
+                            "train/step": step,
+                            "train/epoch": ep + (micro_step % len(dl)) / max(1, len(dl)),
+                        }
+                        if model.head_type == "residual" and model.head is not None:
+                            log_data["train/alpha"] = model.head.alpha.item()
+                        elif model.head_type == "weighted" and model.head is not None:
+                            w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                            for idx, layer_idx in enumerate(model.layers):
+                                log_data[f"weights/layer_{layer_idx}"] = float(w_probs[idx])
+                        wandb.log(log_data, step=step)
 
-                if args.save_every and step % args.save_every == 0:
-                    model.save_queries(args.out)
+                    if args.save_every and step % args.save_every == 0:
+                        model.save_queries(args.out)
 
-    train_time = time.time() - t0
-    peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
-    print(f"\n=== Thống kê hiệu năng ===")
-    print(f"  Thời gian huấn luyện : {train_time:.1f}s ({train_time/60:.2f} phút)")
-    print(f"  Peak VRAM            : {peak_vram_gb:.2f} GB")
-    print(f"  Số tham số học được  : {total_param_count:,}")
+    if is_ddp:
+        dist.barrier()
 
-    efficiency_info = {
-        "num_params": total_param_count,
-        "train_time_sec": round(train_time, 2),
-        "peak_vram_gb": round(peak_vram_gb, 2),
-    }
+    if rank == 0:
+        train_time = time.time() - t0
+        peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
+        print(f"\n=== Thống kê hiệu năng ===")
+        print(f"  Thời gian huấn luyện : {train_time:.1f}s ({train_time/60:.2f} phút)")
+        print(f"  Peak VRAM            : {peak_vram_gb:.2f} GB")
+        print(f"  Số tham số học được  : {total_param_count:,}")
 
-    model.save_queries(args.out)
-    print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
+        efficiency_info = {
+            "num_params": total_param_count,
+            "train_time_sec": round(train_time, 2),
+            "peak_vram_gb": round(peak_vram_gb, 2),
+        }
 
-    if args.eval_after_train:
-        print("\n=== Đánh giá mô hình ngay sau huấn luyện ===")
-        run_evaluation(model, args, wandb_run=wandb_run, efficiency_info=efficiency_info)
+        model.save_queries(args.out)
+        print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
 
-    if wandb_run is not None:
-        wandb.summary["efficiency/train_time_sec"] = train_time
-        wandb.summary["efficiency/peak_vram_gb"] = peak_vram_gb
-        wandb.summary["efficiency/trainable_params"] = total_param_count
-        wandb.summary["train/final_loss"] = loss.item()
-        wandb.summary["train/total_steps"] = total_steps
-        wandb.finish()
+        if args.eval_after_train:
+            print("\n=== Đánh giá mô hình ngay sau huấn luyện ===")
+            run_evaluation(model, args, wandb_run=wandb_run, efficiency_info=efficiency_info)
+
+        if wandb_run is not None:
+            wandb.summary["efficiency/train_time_sec"] = train_time
+            wandb.summary["efficiency/peak_vram_gb"] = peak_vram_gb
+            wandb.summary["efficiency/trainable_params"] = total_param_count
+            wandb.summary["train/final_loss"] = loss.item()
+            wandb.summary["train/total_steps"] = total_steps
+            wandb.finish()
 
 
 # ----------------------------------------------------------------------------- đánh giá
