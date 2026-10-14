@@ -1,0 +1,27 @@
+# ==============================================================================
+# Danh sách thư viện cần thiết cho SLQ & Multi-Layer Retrieval
+# ==============================================================================
+# Lưu ý cài đặt PyTorch hỗ trợ GPU CUDA (Ampere / A100) trước nếu chưa có:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# ==============================================================================
+
+# Core Deep Learning & MLLM Backbone
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.40.0
+accelerate>=0.28.0
+
+# Dependencies bắt buộc cho InternVL3 / InternViT
+timm>=0.9.12
+einops>=0.7.0
+sentencepiece>=0.2.0
+
+# Dữ liệu & Xử lý ảnh / văn bản
+pillow>=10.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+pyarrow>=14.0.0
+datasets>=2.18.0
+
+# Tracking & Trực quan hóa thí nghiệm
+wandb>=0.16.0
