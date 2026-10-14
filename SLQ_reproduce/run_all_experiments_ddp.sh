@@ -72,7 +72,7 @@ fi
 if [ ! -f "$CACHE_FILE" ]; then
     echo -e "\n>>> BƯỚC 0: TRÍCH XUẤT TRƯỚC VIT FEATURES BẰNG CẢ $NUM_GPUS GPU A100..."
     torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" precompute_vit.py \
-        --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --out "$CACHE_FILE" --batch_size "$BATCH_SIZE"
+        --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --out "$CACHE_FILE" --batch_size "$BATCH_SIZE" --workers "$WORKERS"
 fi
 
 # =================== NHÓM ĐỐI CHỨNG: BACKBONE LAST TOKEN ===================

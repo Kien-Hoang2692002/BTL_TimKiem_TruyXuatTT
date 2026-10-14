@@ -66,11 +66,36 @@ def find_coco(coco_root):
     raise FileNotFoundError(f"Không tìm thấy COCO trong {coco_root}")
 
 
+class ImageDataset(torch.utils.data.Dataset):
+    def __init__(self, paths):
+        self.paths = paths
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, i):
+        p = self.paths[i]
+        try:
+            return preprocess_image(Image.open(p)), p, True
+        except Exception:
+            return torch.zeros(3, 448, 448), p, False
+
+
+def collate_images(batch):
+    valid_batch = [b for b in batch if b[2]]
+    if not valid_batch:
+        return None, []
+    pixels = torch.stack([b[0] for b in valid_batch])
+    paths = [b[1] for b in valid_batch]
+    return pixels, paths
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--coco_root", required=True, help="Đường dẫn thư mục coco2017")
     parser.add_argument("--max_pairs", type=int, default=20000, help="Số lượng ảnh cần trích xuất (0 = toàn bộ)")
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size trích xuất trên A100")
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size trích xuất trên A100 (mặc định 128)")
+    parser.add_argument("--workers", type=int, default=8, help="Số luồng CPU nạp ảnh đa tiến trình (mặc định 8)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", default="coco_vit_20k.pt", help="File đầu ra lưu features")
     args = parser.parse_args()
@@ -142,32 +167,38 @@ def main():
     if rank == 0:
         print(f"Tổng số ảnh duy nhất: {len(paths)} | Chia đều cho {world_size} GPUs (~{len(my_paths)} ảnh/GPU)")
 
+    dataset = ImageDataset(my_paths)
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
+        prefetch_factor=2 if args.workers > 0 else None,
+        collate_fn=collate_images,
+        persistent_workers=(args.workers > 0),
+    )
+
     cache_dict = {}
     t0 = time.time()
+    processed_count = 0
 
     with torch.no_grad():
-        for i in range(0, len(my_paths), args.batch_size):
-            chunk = my_paths[i:i + args.batch_size]
-            pixel_list, valid_paths = [], []
-            for p in chunk:
-                try:
-                    pixel_list.append(preprocess_image(Image.open(p)))
-                    valid_paths.append(p)
-                except Exception as e:
-                    print(f"Lỗi đọc {p}: {e}")
-            if not pixel_list:
+        for pixels, valid_paths in loader:
+            if pixels is None or len(valid_paths) == 0:
                 continue
 
-            pixels = torch.stack(pixel_list).to(device, dtype)
+            pixels = pixels.to(device, dtype, non_blocking=True)
             feats = mllm.extract_feature(pixels).to(torch.bfloat16).cpu()
             for p, f in zip(valid_paths, feats):
                 cache_dict[p] = f
 
+            processed_count += len(valid_paths)
             if rank == 0 or not is_ddp:
                 el = time.time() - t0
-                speed = (i + len(chunk)) / max(1e-5, el)
-                print(f"\r  [GPU {local_rank}] Tiến độ: {min(i + args.batch_size, len(my_paths))}/{len(my_paths)} ảnh "
-                      f"({speed:.1f} ảnh/s | Toàn cụm ~{speed * world_size:.1f} ảnh/s) | {el:.1f}s", end="", flush=True)
+                speed = processed_count / max(1e-5, el)
+                print(f"\r  [GPU {local_rank}] Tiến độ: {processed_count}/{len(my_paths)} ảnh "
+                      f"({speed:.1f} ảnh/s | Toàn cụm {world_size} GPU ~{speed * world_size:.1f} ảnh/s) | {el:.1f}s", end="", flush=True)
 
     if is_ddp and world_size > 1:
         shard_file = f"{args.out}.rank{rank}.tmp"
