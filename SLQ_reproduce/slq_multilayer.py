@@ -175,8 +175,17 @@ class CrossAttentionLayerPooling(nn.Module):
         return out.squeeze(1)  # [B, D]
 
 
+class MeanLayerPooling(nn.Module):
+    """Cách a: Mean pooling qua K tầng (không thêm tham số)."""
+    def forward(self, layer_tensors):
+        return torch.stack(layer_tensors, dim=1).mean(dim=1)
+
+
 class ResidualRefinementHead(nn.Module):
-    """Cách: Residual Refinement kết hợp tầng cuối cùng với delta từ các tầng khác."""
+    """Cách c: Residual Refinement kết hợp tầng cuối cùng với delta từ (K-1) tầng khác.
+    Formula: h_final = h_last + alpha * MLP([h_1, ..., h_{K-1}])
+    Khởi tạo alpha = 0.0 (Zero-Init Residual).
+    """
     def __init__(self, in_dim, out_dim):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -185,16 +194,14 @@ class ResidualRefinementHead(nn.Module):
             nn.GELU(),
             nn.Linear(out_dim, out_dim),
         )
-        # Khởi tạo alpha = 0.0 (Zero-Init Residual).
-        # Lúc bắt đầu: h = h_last + 0 * delta = h_last (bảo toàn 100% khả năng của tầng cuối)
-        # Trong quá trình train: alpha tăng dần để bổ sung ngữ nghĩa từ các tầng khác.
         self.alpha = nn.Parameter(torch.zeros(1))
 
     def forward(self, layer_tensors):
-        # layer_tensors: list gồm K tensors, tensor cuối cùng là tầng sâu nhất (vd: layer 24)
+        # layer_tensors[:-1]: K-1 tầng trước (vd: 3 tầng trước)
+        # layer_tensors[-1]: tầng cuối cùng (vd: layer 24)
         h_last = layer_tensors[-1]
-        concat_h = torch.cat(layer_tensors, dim=-1)
-        delta = self.mlp(concat_h)
+        concat_lower = torch.cat(layer_tensors[:-1], dim=-1)
+        delta = self.mlp(concat_lower)
         return h_last + self.alpha * delta
 
 
@@ -251,18 +258,20 @@ class SLQMultiLayerEncoder(nn.Module):
         if K == 1 and self.layers[0] in (-1, self.mllm.language_model.config.num_hidden_layers):
             # Nếu chỉ chọn 1 layer cuối, giữ nguyên dạng mean pooling thuần như SLQ gốc
             self.head = None
+        elif self.head_type == "mean":
+            self.head = MeanLayerPooling().to(device)
         elif self.head_type == "mlp":
             self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device)
+        elif self.head_type == "residual":
+            self.head = ResidualRefinementHead(in_dim=(K - 1) * D, out_dim=D).to(device)
         elif self.head_type == "linear":
             self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device)
         elif self.head_type == "weighted":
             self.head = LearnableLayerWeighting(num_layers=K).to(device)
         elif self.head_type in ("cross_attn", "attention"):
             self.head = CrossAttentionLayerPooling(dim=D).to(device)
-        elif self.head_type == "residual":
-            self.head = ResidualRefinementHead(in_dim=K * D, out_dim=D).to(device)
         else:
-            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mlp', 'linear', 'weighted', 'cross_attn', hoặc 'residual'")
+            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mean', 'mlp', 'residual', 'linear', 'weighted', hoặc 'cross_attn'")
 
     def _run(self, embeds, mask):
         B = embeds.size(0)
@@ -291,7 +300,7 @@ class SLQMultiLayerEncoder(nn.Module):
         # Tổng hợp qua Head
         if self.head is None:
             h = layer_embeds[0]
-        elif self.head_type in ("weighted", "cross_attn", "attention", "residual"):
+        elif self.head_type in ("mean", "weighted", "cross_attn", "attention", "residual"):
             h = self.head(layer_embeds)
         else:  # 'mlp' hoặc 'linear'
             concat_h = torch.cat(layer_embeds, dim=-1)  # [B, K * D]
@@ -583,6 +592,9 @@ def train(args):
         lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm)))
     )
 
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
     step, t0 = 0, time.time()
     for ep in range(args.epochs):
         for items, caps, is_cached in dl:
@@ -638,14 +650,30 @@ def train(args):
             if args.save_every and step % args.save_every == 0:
                 model.save_queries(args.out)
 
+    train_time = time.time() - t0
+    peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
+    print(f"\n=== Thống kê hiệu năng ===")
+    print(f"  Thời gian huấn luyện : {train_time:.1f}s ({train_time/60:.2f} phút)")
+    print(f"  Peak VRAM            : {peak_vram_gb:.2f} GB")
+    print(f"  Số tham số học được  : {total_param_count:,}")
+
+    efficiency_info = {
+        "num_params": total_param_count,
+        "train_time_sec": round(train_time, 2),
+        "peak_vram_gb": round(peak_vram_gb, 2),
+    }
+
     model.save_queries(args.out)
     print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
 
     if args.eval_after_train:
         print("\n=== Đánh giá mô hình ngay sau huấn luyện ===")
-        run_evaluation(model, args, wandb_run=wandb_run)
+        run_evaluation(model, args, wandb_run=wandb_run, efficiency_info=efficiency_info)
 
     if wandb_run is not None:
+        wandb.summary["efficiency/train_time_sec"] = train_time
+        wandb.summary["efficiency/peak_vram_gb"] = peak_vram_gb
+        wandb.summary["efficiency/trainable_params"] = total_param_count
         wandb.summary["train/final_loss"] = loss.item()
         wandb.summary["train/total_steps"] = total_steps
         wandb.finish()
@@ -679,7 +707,7 @@ def recall(scores, positive, ks=(1, 5, 10)):
     return res
 
 
-def run_evaluation(model, args, wandb_run=None):
+def run_evaluation(model, args, wandb_run=None, efficiency_info=None):
     results = {}
     for name in args.data.split(","):
         print(f"== Đánh giá tập: {name}")
@@ -695,10 +723,15 @@ def run_evaluation(model, args, wandb_run=None):
         print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
         print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
 
+    if efficiency_info is not None:
+        results["efficiency"] = efficiency_info
+
     if wandb_run is not None:
         import wandb
         eval_metrics = {}
         for ds_name, m in results.items():
+            if ds_name == "efficiency":
+                continue
             for k in (1, 5, 10):
                 eval_metrics[f"eval/{ds_name}_i2t_r{k}"] = m["I2T"][k]
                 eval_metrics[f"eval/{ds_name}_t2i_r{k}"] = m["T2I"][k]
@@ -752,7 +785,7 @@ if __name__ == "__main__":
     ap.add_argument("mode", choices=["train", "eval"])
     ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20)")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
-    ap.add_argument("--head_type", default="residual", choices=["residual", "cross_attn", "mlp", "linear", "weighted"], help="Kiểu projector: 'residual', 'cross_attn', 'mlp', 'linear', hoặc 'weighted'")
+    ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'cross_attn', 'linear', hoặc 'weighted'")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--batch_size", type=int, default=64, help="Batch size (khuyến nghị 64 hoặc 128 trên A100)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
