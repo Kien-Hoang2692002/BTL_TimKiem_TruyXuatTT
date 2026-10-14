@@ -172,15 +172,20 @@ class ResidualRefinementHead(nn.Module):
         return h_last + self.alpha * delta
 
 
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(-4, -3, -2, -1), head_type="mlp", device=None, dtype=None):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", device=None, dtype=None, attn_implementation="sdpa", vit_chunk_size=64):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
-            native_bf16 = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            native_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
             dtype = torch.bfloat16 if native_bf16 else torch.float32
-        print(f"Device: {device} | Dtype: {dtype} | Layers: {layers} | Head: {head_type}")
+        print(f"Device: {device} | Dtype: {dtype} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
@@ -188,12 +193,20 @@ class SLQMultiLayerEncoder(nn.Module):
         self.num_queries = num_queries
         self.layers = tuple(layers)
         self.head_type = head_type.lower()
+        self.vit_chunk_size = vit_chunk_size
 
         # Load MLLM và đóng băng hoàn toàn
-        self.mllm = AutoModel.from_pretrained(
-            MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
-            use_flash_attn=False, trust_remote_code=True,
-        ).to(device).eval()
+        try:
+            self.mllm = AutoModel.from_pretrained(
+                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
+                attn_implementation=attn_implementation, trust_remote_code=True,
+            ).to(device).eval()
+        except TypeError:
+            self.mllm = AutoModel.from_pretrained(
+                MODEL_ID, torch_dtype=dtype, low_cpu_mem_usage=True,
+                trust_remote_code=True,
+            ).to(device).eval()
+
         self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
         self.tok.padding_side = "left"
         self.img_ctx_id = self.tok.convert_tokens_to_ids("<IMG_CONTEXT>")
@@ -266,20 +279,31 @@ class SLQMultiLayerEncoder(nn.Module):
         emb = self.backbone.get_input_embeddings()(enc.input_ids)
         return self._run(emb, enc.attention_mask)
 
+    def encode_image_from_vit(self, vit):
+        """Chạy trực tiếp từ visual tokens [B, 256, D] mà không cần chạy qua ViT."""
+        B = vit.size(0)
+        if not hasattr(self, "_cached_img_prompt") or self._cached_img_prompt[0] != B:
+            enc = self.tok([IMAGE_PROMPT] * B, return_tensors="pt").to(self.device)
+            with torch.no_grad():
+                base_emb = self.backbone.get_input_embeddings()(enc.input_ids)
+            ctx_mask = (enc.input_ids == self.img_ctx_id)
+            self._cached_img_prompt = (B, base_emb, enc.attention_mask, ctx_mask)
+
+        _, base_emb, mask, ctx_mask = self._cached_img_prompt
+        emb = base_emb.clone()
+        emb[ctx_mask] = vit.to(self.device, self.dtype).reshape(-1, vit.size(-1))
+        return self._run(emb, mask)
+
     def encode_image(self, pixels):
         B = pixels.size(0)
-        enc = self.tok([IMAGE_PROMPT] * B, return_tensors="pt").to(self.device)
-        emb = self.backbone.get_input_embeddings()(enc.input_ids)
         with torch.no_grad():
-            chunk_size = 16
+            chunk_size = getattr(self, "vit_chunk_size", 64 if self.device == "cuda" else 16)
             vit_list = []
             for i in range(0, B, chunk_size):
                 chunk_pixels = pixels[i:i + chunk_size].to(self.device, self.dtype)
                 vit_list.append(self.mllm.extract_feature(chunk_pixels))
             vit = torch.cat(vit_list, dim=0)
-        emb = emb.clone()
-        emb[enc.input_ids == self.img_ctx_id] = vit.reshape(-1, vit.size(-1)).to(emb.dtype)
-        return self._run(emb, enc.attention_mask)
+        return self.encode_image_from_vit(vit)
 
     def get_trainable_params(self):
         params = [self.meta_queries, self.logit_scale]
@@ -308,18 +332,25 @@ class SLQMultiLayerEncoder(nn.Module):
             print("Đã nạp trọng số Head projector thành công.")
 
 
-# ----------------------------------------------------------------------------- tập dữ liệu
+# ----------------------------------------------------------------------------- tập dữ liệu & offline caching
 class PairDataset(Dataset):
-    def __init__(self, pairs, image_root=""):
-        self.pairs, self.root = pairs, image_root
+    def __init__(self, pairs, image_root="", cache_dict=None):
+        self.pairs = pairs
+        self.root = image_root
+        self.cache_dict = cache_dict
 
     def __len__(self):
         return len(self.pairs)
 
     def __getitem__(self, i):
         path, cap = self.pairs[i]
+        if self.cache_dict is not None and path in self.cache_dict:
+            # ViT token features đã cache sẵn: [256, D]
+            return self.cache_dict[path], cap, True
         try:
-            return preprocess_image(Image.open(os.path.join(self.root, path))), cap
+            full_path = os.path.join(self.root, path) if self.root else path
+            img_tensor = preprocess_image(Image.open(full_path))
+            return img_tensor, cap, False
         except Exception as e:
             print("Bỏ qua ảnh lỗi:", path, e)
             return None
@@ -327,7 +358,55 @@ class PairDataset(Dataset):
 
 def collate(batch):
     batch = [b for b in batch if b is not None]
-    return torch.stack([b[0] for b in batch]), [b[1] for b in batch]
+    if not batch:
+        return None
+    is_cached = batch[0][2]
+    items = torch.stack([b[0] for b in batch])
+    caps = [b[1] for b in batch]
+    return items, caps, is_cached
+
+
+def precompute_coco_features(model, pairs, cache_path, batch_size=64):
+    """
+    Trích xuất trước (precompute) ViT features [256, D] cho toàn bộ ảnh huấn luyện và lưu ra file .pt.
+    Khi đã có cache, quá trình huấn luyện bỏ qua hoàn toàn Vision Transformer, đạt tốc độ ~10-15x!
+    """
+    print(f"\n=== Đang trích xuất trước (precompute) ViT features cho {len(pairs)} ảnh ===")
+    print(f"File lưu cache: {cache_path}")
+    unique_paths = list(dict.fromkeys([p[0] for p in pairs]))
+    print(f"Số ảnh duy nhất: {len(unique_paths)}")
+
+    cache_dict = {}
+    t0 = time.time()
+    model.mllm.eval()
+
+    with torch.no_grad():
+        for i in range(0, len(unique_paths), batch_size):
+            chunk = unique_paths[i:i + batch_size]
+            pixel_list = []
+            valid_paths = []
+            for p in chunk:
+                try:
+                    pixel_list.append(preprocess_image(Image.open(p)))
+                    valid_paths.append(p)
+                except Exception as e:
+                    print(f"Lỗi đọc ảnh {p}: {e}")
+            if not pixel_list:
+                continue
+            pixels = torch.stack(pixel_list).to(model.device, model.dtype)
+            feats = model.mllm.extract_feature(pixels).to(torch.bfloat16).cpu()
+            for p, f in zip(valid_paths, feats):
+                cache_dict[p] = f
+            el = time.time() - t0
+            speed = (i + len(chunk)) / max(1e-5, el)
+            print(f"\r  Trích xuất: {min(i + batch_size, len(unique_paths))}/{len(unique_paths)} ảnh "
+                  f"({speed:.1f} ảnh/s) | Đã chạy {el:.1f}s", end="", flush=True)
+
+    print(f"\nHoàn tất trích xuất trong {time.time() - t0:.1f}s. Đang lưu vào {cache_path}...")
+    torch.save(cache_dict, cache_path)
+    file_size_gb = os.path.getsize(cache_path) / 1e9
+    print(f"Đã lưu cache thành công ({file_size_gb:.2f} GB)!\n")
+    return cache_dict
 
 
 def find_coco(coco_root):
@@ -344,7 +423,7 @@ def find_coco(coco_root):
                 return ann_path, img_dir
     raise FileNotFoundError(
         f"Không tìm thấy COCO (annotations={ann_path}, train2017={img_dir}). "
-        "Hãy thêm dataset 'awsaf49/coco-2017-dataset' vào notebook.")
+        "Hãy kiểm tra đường dẫn --coco_root.")
 
 
 def load_coco_train_pairs(coco_root, max_pairs, seed):
@@ -394,20 +473,37 @@ def train(args):
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
+        attn_implementation=args.attn_implementation,
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
 
     pairs = load_coco_train_pairs(args.coco_root, args.max_pairs, args.seed)
     print(f"Số cặp huấn luyện: {len(pairs)}")
+
+    cache_dict = None
+    if args.cache_file:
+        if os.path.isfile(args.cache_file):
+            print(f"Đang nạp ViT feature cache từ {args.cache_file}...")
+            t0 = time.time()
+            cache_dict = torch.load(args.cache_file, map_location="cpu", weights_only=True)
+            print(f"Đã nạp {len(cache_dict)} cached features trong {time.time() - t0:.2f}s!")
+        else:
+            print(f"Cache file {args.cache_file} chưa tồn tại. Bắt đầu precompute...")
+            cache_dict = precompute_coco_features(
+                model, pairs, args.cache_file, batch_size=args.cache_batch_size
+            )
+
     dl = DataLoader(
-        PairDataset(pairs),
+        PairDataset(pairs, cache_dict=cache_dict),
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.workers,
         collate_fn=collate,
         drop_last=True,
-        pin_memory=torch.cuda.is_available()
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=(args.workers > 0),
+        prefetch_factor=2 if args.workers > 0 else None,
     )
 
     trainable_params = model.get_trainable_params()
@@ -433,8 +529,11 @@ def train(args):
 
     step, t0 = 0, time.time()
     for ep in range(args.epochs):
-        for pixels, caps in dl:
-            zi = model.encode_image(pixels)
+        for items, caps, is_cached in dl:
+            if is_cached:
+                zi = model.encode_image_from_vit(items)
+            else:
+                zi = model.encode_image(items)
             zt = model.encode_text(caps)
             if not torch.isfinite(zi).all() or not torch.isfinite(zt).all():
                 raise RuntimeError("Embedding bị NaN/Inf - dừng huấn luyện")
@@ -450,7 +549,7 @@ def train(args):
             sched.step()
             step += 1
 
-            if step % 10 == 0 or step == 1:
+            if step % 10 == 0 or step == 1 or step == total_steps:
                 el = time.time() - t0
                 extra_info = ""
                 if model.head_type == "weighted" and model.head is not None:
@@ -458,9 +557,11 @@ def train(args):
                     extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
                 elif model.head_type == "residual" and model.head is not None:
                     extra_info = f" alpha: {model.head.alpha.item():.4f}"
+                step_per_sec = step / max(1e-5, el)
+                rem_mins = (total_steps - step) / max(1e-5, step_per_sec) / 60
                 print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
                       f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
-                      f"| {el / 60:.1f} phút, còn ~{el / step * (total_steps - step) / 60:.1f} phút", flush=True)
+                      f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
 
             if args.save_every and step % args.save_every == 0:
                 model.save_queries(args.out)
@@ -503,6 +604,7 @@ def evaluate(args):
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
+        attn_implementation=args.attn_implementation,
     )
     if args.queries != "init":
         model.load_queries(args.queries)
@@ -512,7 +614,7 @@ def evaluate(args):
         print(f"== Đánh giá tập: {name}")
         images, texts, img_of_text = load_test_set(name, args)
         print(f"  {len(images)} ảnh, {len(texts)} caption")
-        zt = embed_all(model, texts, "text", args.batch_size * 3)
+        zt = embed_all(model, texts, "text", args.batch_size * 2)
         zi = embed_all(model, images, "image", args.batch_size)
         s = zt @ zi.t()  # [T, I]
         pos = torch.zeros_like(s, dtype=torch.bool)
@@ -533,20 +635,23 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["train", "eval"])
     ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20)")
-    ap.add_argument("--layers", default="-4,-3,-2,-1", help="Các layers cần trích xuất, cách nhau bởi dấu phẩy, vd: '-4,-3,-2,-1'")
-    ap.add_argument("--head_type", default="mlp", choices=["mlp", "linear", "weighted", "cross_attn", "residual"], help="Kiểu projector: 'mlp', 'linear', 'weighted', 'cross_attn', hoặc 'residual'")
+    ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
+    ap.add_argument("--head_type", default="residual", choices=["residual", "cross_attn", "mlp", "linear", "weighted"], help="Kiểu projector: 'residual', 'cross_attn', 'mlp', 'linear', hoặc 'weighted'")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--batch_size", type=int, default=32)
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--batch_size", type=int, default=64, help="Batch size (khuyến nghị 64 hoặc 128 trên A100)")
+    ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
+    ap.add_argument("--attn_implementation", default="sdpa", choices=["sdpa", "eager", "flash_attention_2"], help="Attention backend")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
     ap.add_argument("--max_pairs", type=int, default=20000, help="0 = toàn bộ ~118k ảnh COCO")
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--save_every", type=int, default=100)
-    ap.add_argument("--out", default="slq_multilayer_q20.pt")
+    ap.add_argument("--out", default="slq_residual_spaced_q20.pt")
+    ap.add_argument("--cache_file", default="", help="Đường dẫn file .pt lưu/nạp precomputed ViT features (tăng tốc 10-15x)")
+    ap.add_argument("--cache_batch_size", type=int, default=64, help="Batch size khi precompute ViT features trên A100")
     # eval
-    ap.add_argument("--data", default="flickr")
+    ap.add_argument("--data", default="flickr,coco")
     ap.add_argument("--queries", default="init", help="'init' = chưa train, hoặc đường dẫn file .pt")
     ap.add_argument("--custom_csv")
     for i in range(len(sys.argv) - 1):
@@ -557,4 +662,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     train(args) if args.mode == "train" else evaluate(args)
+
 
