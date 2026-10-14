@@ -91,6 +91,16 @@ try:
 except Exception:
     pass
 
+# Vá lỗi tương thích cho datasets và huggingface_hub mismatch (BucketNotFoundError)
+try:
+    import huggingface_hub.errors
+    if not hasattr(huggingface_hub.errors, "BucketNotFoundError"):
+        class BucketNotFoundError(Exception):
+            pass
+        huggingface_hub.errors.BucketNotFoundError = BucketNotFoundError
+except Exception:
+    pass
+
 
 
 # ----------------------------------------------------------------------------- tiền xử lý ảnh
@@ -545,6 +555,14 @@ def load_coco_train_pairs(coco_root, max_pairs, seed):
 
 def load_test_set(name, args):
     if name in HF_TEST_SETS:
+        try:
+            import huggingface_hub.errors
+            if not hasattr(huggingface_hub.errors, "BucketNotFoundError"):
+                class BucketNotFoundError(Exception):
+                    pass
+                huggingface_hub.errors.BucketNotFoundError = BucketNotFoundError
+        except Exception:
+            pass
         from datasets import load_dataset
         ds = load_dataset("parquet", data_files=HF_TEST_SETS[name], split="train")
         images, texts, img_of_text = [], [], []
@@ -777,7 +795,12 @@ def train(args):
                         model.save_queries(args.out)
 
     if is_ddp:
-        dist.barrier()
+        try:
+            dist.barrier(device_ids=[local_rank])
+        except TypeError:
+            dist.barrier()
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
     if rank == 0:
         train_time = time.time() - t0

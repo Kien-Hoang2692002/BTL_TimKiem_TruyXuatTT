@@ -222,7 +222,10 @@ def main():
     if is_ddp and world_size > 1:
         shard_file = f"{args.out}.rank{rank}.tmp"
         torch.save(cache_dict, shard_file)
-        dist.barrier()
+        try:
+            dist.barrier(device_ids=[local_rank])
+        except TypeError:
+            dist.barrier()
         if rank == 0:
             print("\n>>> Đang hợp nhất (merge) kết quả từ tất cả các GPU...")
             full_cache = {}
@@ -235,7 +238,12 @@ def main():
             torch.save(full_cache, args.out)
             size_gb = os.path.getsize(args.out) / (1024 ** 3)
             print(f"Hoàn tất! Đã lưu {len(full_cache)} ảnh vào {args.out} ({size_gb:.2f} GB) trong {time.time() - t0:.1f}s!")
-        dist.barrier()
+        try:
+            dist.barrier(device_ids=[local_rank])
+        except TypeError:
+            dist.barrier()
+        if dist.is_initialized():
+            dist.destroy_process_group()
     else:
         print(f"\nHoàn tất trích xuất trong {time.time() - t0:.1f}s. Đang lưu vào {args.out}...")
         torch.save(cache_dict, args.out)
