@@ -585,7 +585,9 @@ def train(args):
         param_groups = [{"params": trainable_params, "weight_decay": 0.0}]
 
     opt = torch.optim.AdamW(param_groups, lr=args.lr)
-    total_steps = args.epochs * len(dl)
+    grad_accum = max(1, args.grad_accum_steps)
+    steps_per_epoch = math.ceil(len(dl) / grad_accum)
+    total_steps = args.epochs * steps_per_epoch
     warm = max(1, int(0.03 * total_steps))
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt,
@@ -595,7 +597,8 @@ def train(args):
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    step, t0 = 0, time.time()
+    step, micro_step, t0 = 0, 0, time.time()
+    opt.zero_grad(set_to_none=True)
     for ep in range(args.epochs):
         for items, caps, is_cached in dl:
             if is_cached:
@@ -610,45 +613,49 @@ def train(args):
             labels = torch.arange(len(zi), device=zi.device)
             loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
 
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
-            opt.step()
-            sched.step()
-            step += 1
+            loss_scaled = loss / grad_accum
+            loss_scaled.backward()
+            micro_step += 1
 
-            if step % 10 == 0 or step == 1 or step == total_steps:
-                el = time.time() - t0
-                extra_info = ""
-                if model.head_type == "weighted" and model.head is not None:
-                    w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
-                    extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
-                elif model.head_type == "residual" and model.head is not None:
-                    extra_info = f" alpha: {model.head.alpha.item():.4f}"
-                step_per_sec = step / max(1e-5, el)
-                rem_mins = (total_steps - step) / max(1e-5, step_per_sec) / 60
-                print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
-                      f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
-                      f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
+            if micro_step % grad_accum == 0 or micro_step == len(dl):
+                torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
+                opt.step()
+                sched.step()
+                opt.zero_grad(set_to_none=True)
+                step += 1
 
-            if wandb_run is not None:
-                log_data = {
-                    "train/loss": loss.item(),
-                    "train/tau": model.logit_scale.item(),
-                    "train/lr": sched.get_last_lr()[0],
-                    "train/step": step,
-                    "train/epoch": ep + (step % len(dl)) / max(1, len(dl)),
-                }
-                if model.head_type == "residual" and model.head is not None:
-                    log_data["train/alpha"] = model.head.alpha.item()
-                elif model.head_type == "weighted" and model.head is not None:
-                    w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
-                    for idx, layer_idx in enumerate(model.layers):
-                        log_data[f"weights/layer_{layer_idx}"] = float(w_probs[idx])
-                wandb.log(log_data, step=step)
+                if step % 10 == 0 or step == 1 or step == total_steps:
+                    el = time.time() - t0
+                    extra_info = ""
+                    if model.head_type == "weighted" and model.head is not None:
+                        w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                        extra_info = f" weights: {[round(float(w), 3) for w in w_probs]}"
+                    elif model.head_type == "residual" and model.head is not None:
+                        extra_info = f" alpha: {model.head.alpha.item():.4f}"
+                    step_per_sec = step / max(1e-5, el)
+                    rem_mins = (total_steps - step) / max(1e-5, step_per_sec) / 60
+                    print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
+                          f"tau {model.logit_scale.item():.4f} lr {sched.get_last_lr()[0]:.2e}{extra_info} "
+                          f"({step_per_sec:.1f} steps/s) | {el / 60:.1f}m, còn ~{rem_mins:.1f}m", flush=True)
 
-            if args.save_every and step % args.save_every == 0:
-                model.save_queries(args.out)
+                if wandb_run is not None:
+                    log_data = {
+                        "train/loss": loss.item(),
+                        "train/tau": model.logit_scale.item(),
+                        "train/lr": sched.get_last_lr()[0],
+                        "train/step": step,
+                        "train/epoch": ep + (micro_step % len(dl)) / max(1, len(dl)),
+                    }
+                    if model.head_type == "residual" and model.head is not None:
+                        log_data["train/alpha"] = model.head.alpha.item()
+                    elif model.head_type == "weighted" and model.head is not None:
+                        w_probs = F.softmax(model.head.weights, dim=0).detach().cpu().numpy()
+                        for idx, layer_idx in enumerate(model.layers):
+                            log_data[f"weights/layer_{layer_idx}"] = float(w_probs[idx])
+                    wandb.log(log_data, step=step)
+
+                if args.save_every and step % args.save_every == 0:
+                    model.save_queries(args.out)
 
     train_time = time.time() - t0
     peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
@@ -787,14 +794,15 @@ if __name__ == "__main__":
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
     ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'cross_attn', 'linear', hoặc 'weighted'")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--batch_size", type=int, default=64, help="Batch size (khuyến nghị 64 hoặc 128 trên A100)")
+    ap.add_argument("--batch_size", type=int, default=128, help="Batch size trên GPU (khuyến nghị 128 trên A100)")
+    ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
     ap.add_argument("--attn_implementation", default="sdpa", choices=["sdpa", "eager", "flash_attention_2"], help="Attention backend")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
     ap.add_argument("--max_pairs", type=int, default=20000, help="0 = toàn bộ ~118k ảnh COCO")
-    ap.add_argument("--epochs", type=int, default=1)
-    ap.add_argument("--lr", type=float, default=5e-4)
+    ap.add_argument("--epochs", type=int, default=5, help="Số epochs huấn luyện (mặc định 5 như bài báo gốc)")
+    ap.add_argument("--lr", type=float, default=5e-4, help="Learning rate (mặc định 5e-4 như bài báo gốc)")
     ap.add_argument("--save_every", type=int, default=100)
     ap.add_argument("--out", default="slq_residual_spaced_q20.pt")
     ap.add_argument("--cache_file", default="", help="Đường dẫn file .pt lưu/nạp precomputed ViT features (tăng tốc 10-15x)")
