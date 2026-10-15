@@ -316,25 +316,25 @@ class SLQMultiLayerEncoder(nn.Module):
         elif self.num_prefix_queries > 0:
             # Chế độ Prefix - Suffix (Prefix ở đầu chuỗi L1, Suffix ở cuối chuỗi tại L1 hoặc inject_layer)
             self.num_suffix_queries = max(1, num_queries - self.num_prefix_queries)
-            self.meta_queries_prefix = nn.Parameter(torch.randn(self.num_prefix_queries, D, device=device) / math.sqrt(D))
-            self.meta_queries_suffix = nn.Parameter(torch.randn(self.num_suffix_queries, D, device=device) / math.sqrt(D))
+            self.meta_queries_prefix = nn.Parameter(torch.randn(self.num_prefix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
+            self.meta_queries_suffix = nn.Parameter(torch.randn(self.num_suffix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
             if self.inject_layer > 1:
-                self.query_norm_late = nn.LayerNorm(D, device=device)
+                self.query_norm_late = nn.LayerNorm(D, device=device, dtype=dtype)
             self.num_pool_queries = self.num_suffix_queries
         elif self.query_split == "layer_split":
             # 10 queries ở Layer 1 + 10 queries ở inject_layer (Layer 18). Chỉ pool 10 queries cuối.
             self.num_suffix_queries = half_q
-            self.meta_queries_early = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
-            self.meta_queries_late = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
-            self.query_norm_late = nn.LayerNorm(D, device=device)
+            self.meta_queries_early = nn.Parameter(torch.randn(half_q, D, device=device, dtype=dtype) / math.sqrt(D))
+            self.meta_queries_late = nn.Parameter(torch.randn(half_q, D, device=device, dtype=dtype) / math.sqrt(D))
+            self.query_norm_late = nn.LayerNorm(D, device=device, dtype=dtype)
             self.num_pool_queries = half_q
         else:
             self.num_suffix_queries = 0
-            self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
-            self.query_norm = nn.LayerNorm(D, device=device)
+            self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device, dtype=dtype) / math.sqrt(D))
+            self.query_norm = nn.LayerNorm(D, device=device, dtype=dtype)
             self.num_pool_queries = num_queries
 
-        self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device))
+        self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device, dtype=dtype))
         self.backbone = self.mllm.language_model.model  # Qwen2Model
 
         K = len(self.layers)
@@ -344,26 +344,26 @@ class SLQMultiLayerEncoder(nn.Module):
             # Đối chứng: trích xuất Last Token từ backbone
             if self.head_type == "linear":
                 # Giống hệt Table 5 "Head (Linear)" trong bài báo gốc
-                self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device)
+                self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device=device, dtype=dtype)
             elif self.head_type == "mlp":
-                self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device)
+                self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device=device, dtype=dtype)
             else:
                 self.head = None
         elif K == 1 and self.layers[0] in (-1, self.mllm.language_model.config.num_hidden_layers, 24) and self.head_type in ("mean", "none", "identity"):
             # Nếu chỉ chọn 1 layer cuối, giữ nguyên dạng pooling thuần như SLQ gốc
             self.head = None
         elif self.head_type == "mean":
-            self.head = MeanLayerPooling().to(device)
+            self.head = MeanLayerPooling().to(device=device, dtype=dtype)
         elif self.head_type == "mlp":
-            self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device)
+            self.head = MultiLayerMLPHead(in_dim=K * D, out_dim=D).to(device=device, dtype=dtype)
         elif self.head_type == "residual":
-            self.head = ResidualRefinementHead(in_dim=(K - 1) * D, out_dim=D).to(device)
+            self.head = ResidualRefinementHead(in_dim=(K - 1) * D, out_dim=D).to(device=device, dtype=dtype)
         elif self.head_type == "linear":
-            self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device)
+            self.head = LinearProjectorHead(in_dim=K * D, out_dim=D).to(device=device, dtype=dtype)
         elif self.head_type == "weighted":
-            self.head = LearnableLayerWeighting(num_layers=K).to(device)
+            self.head = LearnableLayerWeighting(num_layers=K).to(device=device, dtype=dtype)
         elif self.head_type in ("cross_attn", "attention"):
-            self.head = CrossAttentionLayerPooling(dim=D).to(device)
+            self.head = CrossAttentionLayerPooling(dim=D).to(device=device, dtype=dtype)
         # Nếu dùng Late Injection (inject_layer > 1), đăng ký forward pre-hook cố định trên backbone layer
         self._inject_hook_handle = None
         if self.num_queries > 0 and self.inject_layer > 1:
@@ -374,14 +374,29 @@ class SLQMultiLayerEncoder(nn.Module):
                 B = h.size(0)
                 if self.num_prefix_queries > 0:
                     # Thay thế num_suffix_queries cuối bằng q_suffix tươi mới
-                    q_fresh = self.query_norm_late(self.meta_queries_suffix.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    norm_mod = self.query_norm_late
+                    if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
+                        norm_mod = norm_mod.to(device=h.device, dtype=h.dtype)
+                    q_input = self.meta_queries_suffix.to(device=h.device, dtype=h.dtype)
+                    q_normed = norm_mod(q_input) if norm_mod is not None else q_input
+                    q_fresh = q_normed.unsqueeze(0).expand(B, -1, -1)
                     h_new = torch.cat([h[:, :-self.num_suffix_queries], q_fresh], dim=1)
                 elif self.query_split == "layer_split":
                     half_q = self.num_pool_queries
-                    q_fresh = self.query_norm_late(self.meta_queries_late.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    norm_mod = self.query_norm_late
+                    if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
+                        norm_mod = norm_mod.to(device=h.device, dtype=h.dtype)
+                    q_input = self.meta_queries_late.to(device=h.device, dtype=h.dtype)
+                    q_normed = norm_mod(q_input) if norm_mod is not None else q_input
+                    q_fresh = q_normed.unsqueeze(0).expand(B, -1, -1)
                     h_new = torch.cat([h[:, :-half_q], q_fresh], dim=1)
                 else:
-                    q_fresh = self.query_norm(self.meta_queries.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    norm_mod = self.query_norm
+                    if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
+                        norm_mod = norm_mod.to(device=h.device, dtype=h.dtype)
+                    q_input = self.meta_queries.to(device=h.device, dtype=h.dtype)
+                    q_normed = norm_mod(q_input) if norm_mod is not None else q_input
+                    q_fresh = norm_mod(q_input).unsqueeze(0).expand(B, -1, -1) if norm_mod is not None else q_input.unsqueeze(0).expand(B, -1, -1)
                     h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
                 return (h_new,) + args[1:]
 
@@ -444,14 +459,14 @@ class SLQMultiLayerEncoder(nn.Module):
                 # Cắt đúng num_pool_queries vị trí cuối cùng (luôn là 10 tokens cuối chuỗi / cuối tầng)
                 q_tokens = h_layer[:, -self.num_pool_queries:]
                 if self.pooling == "last":
-                    feat = q_tokens[:, -1, :].float()
+                    feat = q_tokens[:, -1, :].to(self.dtype)
                 elif self.pooling == "max":
-                    feat = q_tokens.float().max(dim=1).values
+                    feat = q_tokens.max(dim=1).values.to(self.dtype)
                 else:  # "mean" (mặc định của SLQ gốc)
-                    feat = q_tokens.float().mean(dim=1)
+                    feat = q_tokens.mean(dim=1).to(self.dtype)
             else:
                 # Không dùng queries: trích xuất last token của chuỗi input trên backbone
-                feat = h_layer[:, -1, :].float()
+                feat = h_layer[:, -1, :].to(self.dtype)
             layer_embeds.append(feat)
 
         # Tổng hợp qua Head
@@ -463,7 +478,7 @@ class SLQMultiLayerEncoder(nn.Module):
             concat_h = torch.cat(layer_embeds, dim=-1)  # [B, K * D]
             h = self.head(concat_h)  # [B, D]
 
-        return F.normalize(h, dim=-1)
+        return F.normalize(h.float(), dim=-1)
 
     def encode_text(self, texts):
         enc = self.tok([TEMPLATE.format(input=t) for t in texts], return_tensors="pt",
@@ -543,15 +558,17 @@ class SLQMultiLayerEncoder(nn.Module):
         for name in ["meta_queries", "meta_queries_early", "meta_queries_late", "meta_queries_prefix", "meta_queries_suffix"]:
             param = getattr(self, name, None)
             if param is not None and name in ck and ck[name] is not None:
-                param.data.copy_(ck[name])
+                param.data.copy_(ck[name].to(device=param.device, dtype=param.dtype))
         for name in ["query_norm", "query_norm_late"]:
             norm = getattr(self, name, None)
             if norm is not None and f"{name}_state_dict" in ck:
-                norm.load_state_dict(ck[f"{name}_state_dict"])
+                norm_sd = {k: v.to(device=self.device, dtype=self.dtype) for k, v in ck[f"{name}_state_dict"].items()}
+                norm.load_state_dict(norm_sd)
         if "logit_scale" in ck:
-            self.logit_scale.data.copy_(ck["logit_scale"])
+            self.logit_scale.data.copy_(ck["logit_scale"].to(device=self.logit_scale.device, dtype=self.logit_scale.dtype))
         if "head_state_dict" in ck and self.head is not None:
-            self.head.load_state_dict(ck["head_state_dict"])
+            head_sd = {k: v.to(device=self.device, dtype=self.dtype) for k, v in ck["head_state_dict"].items()}
+            self.head.load_state_dict(head_sd)
             print("Đã nạp trọng số Head projector thành công.")
 
 
