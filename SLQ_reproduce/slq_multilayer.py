@@ -235,7 +235,7 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none"):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none", num_prefix_queries=0):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
@@ -243,7 +243,11 @@ class SLQMultiLayerEncoder(nn.Module):
             dtype = torch.bfloat16 if native_bf16 else torch.float32
         self.inject_layer = max(1, int(inject_layer))
         self.query_split = (query_split or "none").lower()
-        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | InjectLayer: {self.inject_layer} | Split: {self.query_split} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
+        self.num_prefix_queries = max(0, int(num_prefix_queries))
+        if self.num_prefix_queries == 0 and self.query_split in ("seq_split", "prefix_suffix"):
+            self.num_prefix_queries = max(1, num_queries // 2)
+
+        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} (Prefix: {self.num_prefix_queries}) | InjectLayer: {self.inject_layer} | Split: {self.query_split} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
@@ -303,18 +307,24 @@ class SLQMultiLayerEncoder(nn.Module):
         half_q = max(1, num_queries // 2)
         if num_queries == 0:
             self.num_pool_queries = 0
+            self.num_suffix_queries = 0
+        elif self.num_prefix_queries > 0:
+            # Chế độ Prefix - Suffix (Prefix ở đầu chuỗi L1, Suffix ở cuối chuỗi tại L1 hoặc inject_layer)
+            self.num_suffix_queries = max(1, num_queries - self.num_prefix_queries)
+            self.meta_queries_prefix = nn.Parameter(torch.randn(self.num_prefix_queries, D, device=device) / math.sqrt(D))
+            self.meta_queries_suffix = nn.Parameter(torch.randn(self.num_suffix_queries, D, device=device) / math.sqrt(D))
+            if self.inject_layer > 1:
+                self.query_norm_late = nn.LayerNorm(D, device=device)
+            self.num_pool_queries = self.num_suffix_queries
         elif self.query_split == "layer_split":
             # 10 queries ở Layer 1 + 10 queries ở inject_layer (Layer 18). Chỉ pool 10 queries cuối.
+            self.num_suffix_queries = half_q
             self.meta_queries_early = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
             self.meta_queries_late = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
             self.query_norm_late = nn.LayerNorm(D, device=device)
             self.num_pool_queries = half_q
-        elif self.query_split in ("seq_split", "prefix_suffix"):
-            # 10 queries ở đầu chuỗi (prefix) + 10 queries ở cuối chuỗi (suffix). Chỉ pool 10 queries cuối.
-            self.meta_queries_prefix = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
-            self.meta_queries_suffix = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
-            self.num_pool_queries = half_q
         else:
+            self.num_suffix_queries = 0
             self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
             self.query_norm = nn.LayerNorm(D, device=device)
             self.num_pool_queries = num_queries
@@ -357,7 +367,11 @@ class SLQMultiLayerEncoder(nn.Module):
             def inject_hook(module, args):
                 h = args[0]
                 B = h.size(0)
-                if self.query_split == "layer_split":
+                if self.num_prefix_queries > 0:
+                    # Thay thế num_suffix_queries cuối bằng q_suffix tươi mới
+                    q_fresh = self.query_norm_late(self.meta_queries_suffix.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    h_new = torch.cat([h[:, :-self.num_suffix_queries], q_fresh], dim=1)
+                elif self.query_split == "layer_split":
                     half_q = self.num_pool_queries
                     q_fresh = self.query_norm_late(self.meta_queries_late.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
                     h_new = torch.cat([h[:, :-half_q], q_fresh], dim=1)
@@ -373,6 +387,20 @@ class SLQMultiLayerEncoder(nn.Module):
 
         if self.num_queries == 0 or self.num_pool_queries == 0:
             pass
+        elif self.num_prefix_queries > 0:
+            # Prefix ở đầu chuỗi (Layer 1)
+            q_prefix = self.meta_queries_prefix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+            if self.inject_layer <= 1:
+                # Suffix cũng ở Layer 1
+                q_suffix = self.meta_queries_suffix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+                embeds = torch.cat([q_prefix, embeds, q_suffix], dim=1)
+                mask = torch.cat([mask.new_ones(B, q_prefix.size(1)), mask, mask.new_ones(B, q_suffix.size(1))], dim=1)
+            else:
+                # Suffix được tiêm trễ ở inject_layer. Tại Layer 1 đặt dummy zeros
+                q_dummy = torch.zeros(B, self.num_suffix_queries, self.hidden_dim, dtype=self.dtype, device=embeds.device)
+                embeds = torch.cat([q_prefix, embeds, q_dummy], dim=1)
+                mask = torch.cat([mask.new_ones(B, q_prefix.size(1)), mask, mask.new_ones(B, self.num_suffix_queries)], dim=1)
+
         elif self.query_split == "layer_split":
             # 10 queries ở đầu mạng (Layer 1) + 10 queries ở cuối mạng (Layer inject_layer)
             half_q = self.num_pool_queries
@@ -380,13 +408,6 @@ class SLQMultiLayerEncoder(nn.Module):
             q_late_dummy = torch.zeros(B, half_q, self.hidden_dim, dtype=self.dtype, device=embeds.device)
             embeds = torch.cat([embeds, q_early, q_late_dummy], dim=1)
             mask = torch.cat([mask, mask.new_ones(B, half_q * 2)], dim=1)
-
-        elif self.query_split in ("seq_split", "prefix_suffix"):
-            # 10 queries ở đầu chuỗi (prefix) + 10 queries ở cuối chuỗi (suffix)
-            q_prefix = self.meta_queries_prefix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
-            q_suffix = self.meta_queries_suffix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
-            embeds = torch.cat([q_prefix, embeds, q_suffix], dim=1)
-            mask = torch.cat([mask.new_ones(B, q_prefix.size(1)), mask, mask.new_ones(B, q_suffix.size(1))], dim=1)
 
         else:
             # Chế độ thông thường
@@ -698,6 +719,7 @@ def train(args):
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
+        num_prefix_queries=getattr(args, "num_prefix_queries", 0),
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
@@ -995,6 +1017,7 @@ def evaluate(args):
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
+        num_prefix_queries=getattr(args, "num_prefix_queries", 0),
     )
     if args.queries != "init":
         model.load_queries(args.queries)
@@ -1009,7 +1032,7 @@ def evaluate(args):
                 entity=args.wandb_entity,
                 name=run_name,
                 job_type="eval",
-                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean"), "inject_layer": getattr(args, "inject_layer", 1), "query_split": getattr(args, "query_split", "none")}
+                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean"), "inject_layer": getattr(args, "inject_layer", 1), "query_split": getattr(args, "query_split", "none"), "num_prefix_queries": getattr(args, "num_prefix_queries", 0)}
             )
         except Exception:
             wandb_run = None
@@ -1025,7 +1048,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["train", "eval"])
     ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20; đặt 0 để chạy đối chứng Last Token trên backbone)")
-    ap.add_argument("--inject_layer", type=int, default=1, help="Tầng bắt đầu chèn Latent Queries (mặc định 1: chèn tại input; hoặc 18, 20, 23)")
+    ap.add_argument("--num_prefix_queries", type=int, default=0, help="Số lượng prefix query đặt ở đầu chuỗi (vd: 5). Nếu > 0, các query còn lại (num_queries - num_prefix) sẽ là suffix query ở cuối chuỗi)")
+    ap.add_argument("--inject_layer", type=int, default=1, help="Tầng bắt đầu chèn Latent Queries (mặc định 1: chèn tại input; hoặc 12, 16, 18, 20)")
     ap.add_argument("--query_split", default="none", choices=["none", "layer_split", "seq_split", "prefix_suffix"], help="Chế độ chia query: 'none' (chuẩn), 'layer_split' (10 tại L1 + 10 tại inject_layer), 'seq_split' (10 prefix + 10 suffix)")
     ap.add_argument("--pooling", default="mean", choices=["mean", "last", "max"], help="Chiến lược pooling qua N queries: 'mean' (mặc định), 'last', hoặc 'max'")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
