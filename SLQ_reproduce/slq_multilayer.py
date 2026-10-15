@@ -949,12 +949,12 @@ def train(args):
             dist.barrier(device_ids=[local_rank])
         except TypeError:
             dist.barrier()
-        if dist.is_initialized():
-            dist.destroy_process_group()
 
+    train_time = time.time() - t0
+    peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
+
+    efficiency_info = None
     if rank == 0:
-        train_time = time.time() - t0
-        peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
         print(f"\n=== Thống kê hiệu năng ===")
         print(f"  Thời gian huấn luyện : {train_time:.1f}s ({train_time/60:.2f} phút)")
         print(f"  Peak VRAM            : {peak_vram_gb:.2f} GB")
@@ -969,37 +969,78 @@ def train(args):
         model.save_queries(args.out)
         print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
 
-        if args.eval_after_train:
-            print("\n=== Đánh giá mô hình ngay sau huấn luyện ===")
-            run_evaluation(model, args, wandb_run=wandb_run, efficiency_info=efficiency_info)
+    if args.eval_after_train:
+        if rank == 0:
+            print(f"\n=== Đánh giá mô hình ngay sau huấn luyện (Song song qua {world_size} GPUs) ===")
+        run_evaluation(model, args, wandb_run=wandb_run if rank == 0 else None, efficiency_info=efficiency_info if rank == 0 else None, is_ddp=is_ddp, rank=rank, world_size=world_size)
 
-        if wandb_run is not None:
-            wandb.summary["efficiency/train_time_sec"] = train_time
-            wandb.summary["efficiency/peak_vram_gb"] = peak_vram_gb
-            wandb.summary["efficiency/trainable_params"] = total_param_count
-            wandb.summary["train/final_loss"] = loss.item()
-            wandb.summary["train/total_steps"] = total_steps
-            wandb.finish()
+    if is_ddp:
+        try:
+            dist.barrier(device_ids=[local_rank])
+        except TypeError:
+            dist.barrier()
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+    if rank == 0 and wandb_run is not None:
+        wandb.summary["efficiency/train_time_sec"] = train_time
+        wandb.summary["efficiency/peak_vram_gb"] = peak_vram_gb
+        wandb.summary["efficiency/trainable_params"] = total_param_count
+        wandb.summary["train/final_loss"] = loss.item()
+        wandb.summary["train/total_steps"] = total_steps
+        wandb.finish()
 
 
 # ----------------------------------------------------------------------------- đánh giá
 @torch.no_grad()
-def embed_all(model, items, kind, bs):
-    out = []
-    for i in range(0, len(items), bs):
-        chunk = items[i:i + bs]
+def embed_all(model, items, kind, bs, is_ddp=False, rank=0, world_size=1):
+    if not is_ddp or world_size <= 1:
+        out = []
+        for i in range(0, len(items), bs):
+            chunk = items[i:i + bs]
+            if kind == "text":
+                out.append(model.encode_text(chunk).cpu())
+            else:
+                imgs = [Image.open(x) if isinstance(x, str) else x for x in chunk]
+                out.append(model.encode_image(torch.stack([preprocess_image(im) for im in imgs])).cpu())
+            print(f"\r  {kind}: {min(i + bs, len(items))}/{len(items)}", end="", flush=True)
+        print()
+        out = torch.cat(out) if out else torch.empty(0, model.hidden_dim)
+        bad = (~torch.isfinite(out)).any(1).sum().item()
+        if bad:
+            raise RuntimeError(f"{bad}/{len(out)} embedding {kind} bị NaN/Inf - kết quả vô nghĩa")
+        return out
+
+    # Chế độ phân bổ song song qua toàn bộ các GPU (DDP)
+    import torch.distributed as dist
+    sub_items = items[rank::world_size]
+    sub_out = []
+    for i in range(0, len(sub_items), bs):
+        chunk = sub_items[i:i + bs]
         if kind == "text":
-            out.append(model.encode_text(chunk).cpu())
+            sub_out.append(model.encode_text(chunk).cpu())
         else:
             imgs = [Image.open(x) if isinstance(x, str) else x for x in chunk]
-            out.append(model.encode_image(torch.stack([preprocess_image(im) for im in imgs])).cpu())
-        print(f"\r  {kind}: {min(i + bs, len(items))}/{len(items)}", end="", flush=True)
-    print()
-    out = torch.cat(out)
-    bad = (~torch.isfinite(out)).any(1).sum().item()
+            out_img = model.encode_image(torch.stack([preprocess_image(im) for im in imgs]))
+            sub_out.append(out_img.cpu())
+        if rank == 0:
+            done_approx = min((i + bs) * world_size, len(items))
+            print(f"\r  {kind} (song song {world_size}x GPUs): ~{done_approx}/{len(items)}", end="", flush=True)
+    if rank == 0:
+        print()
+
+    sub_out = torch.cat(sub_out) if sub_out else torch.empty(0, model.hidden_dim)
+    gathered = [None for _ in range(world_size)]
+    dist.all_gather_object(gathered, sub_out)
+
+    full_out = torch.empty(len(items), sub_out.size(-1), dtype=sub_out.dtype)
+    for r, r_feats in enumerate(gathered):
+        full_out[r::world_size] = r_feats
+
+    bad = (~torch.isfinite(full_out)).any(1).sum().item()
     if bad:
-        raise RuntimeError(f"{bad}/{len(out)} embedding {kind} bị NaN/Inf - kết quả vô nghĩa")
-    return out
+        raise RuntimeError(f"{bad}/{len(full_out)} embedding {kind} bị NaN/Inf - kết quả vô nghĩa")
+    return full_out
 
 
 def recall(scores, positive, ks=(1, 5, 10)):
@@ -1010,23 +1051,25 @@ def recall(scores, positive, ks=(1, 5, 10)):
     return res
 
 
-def run_evaluation(model, args, wandb_run=None, efficiency_info=None):
+def run_evaluation(model, args, wandb_run=None, efficiency_info=None, is_ddp=False, rank=0, world_size=1):
     results = {}
     for name in args.data.split(","):
-        print(f"== Đánh giá tập: {name}")
+        if rank == 0:
+            print(f"== Đánh giá tập: {name}")
         images, texts, img_of_text = load_test_set(name, args)
-        print(f"  {len(images)} ảnh, {len(texts)} caption")
-        zt = embed_all(model, texts, "text", args.batch_size * 2)
-        zi = embed_all(model, images, "image", args.batch_size)
+        if rank == 0:
+            print(f"  {len(images)} ảnh, {len(texts)} caption (phân bổ song song qua {world_size} GPUs)")
+        zt = embed_all(model, texts, "text", args.batch_size * 2, is_ddp=is_ddp, rank=rank, world_size=world_size)
+        zi = embed_all(model, images, "image", args.batch_size, is_ddp=is_ddp, rank=rank, world_size=world_size)
         s = zt @ zi.t()  # [T, I]
         pos = torch.zeros_like(s, dtype=torch.bool)
         pos[torch.arange(len(texts)), torch.tensor(img_of_text)] = True
-        t2i, i2t = recall(s, pos), recall(s.t(), pos.t())
-        results[name] = {"T2I": t2i, "I2T": i2t}
-        print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
-        print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
+        if rank == 0:
+            results[name] = {"T2I": t2i, "I2T": i2t}
+            print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
+            print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
 
-    if efficiency_info is not None:
+    if rank == 0 and efficiency_info is not None:
         results["efficiency"] = efficiency_info
 
     if wandb_run is not None:
@@ -1042,21 +1085,37 @@ def run_evaluation(model, args, wandb_run=None, efficiency_info=None):
         for k, v in eval_metrics.items():
             wandb.summary[k] = v
 
-    tag = os.path.splitext(os.path.basename(args.queries if args.queries != "init" else args.out))[0]
-    out_filename = f"results_multilayer_{tag}.json"
-    with open(out_filename, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"Đã ghi kết quả đánh giá vào {out_filename}")
+    if rank == 0:
+        tag = os.path.splitext(os.path.basename(args.queries if args.queries != "init" else args.out))[0]
+        out_filename = f"results_multilayer_{tag}.json"
+        with open(out_filename, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Đã ghi kết quả đánh giá vào {out_filename}")
     return results
 
 
 def evaluate(args):
+    is_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
+    if is_ddp:
+        import torch.distributed as dist
+        if not dist.is_initialized():
+            dist.init_process_group("nccl")
+        rank = int(os.environ["RANK"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        world_size = int(os.environ["WORLD_SIZE"])
+        torch.cuda.set_device(local_rank)
+        target_device = f"cuda:{local_rank}"
+    else:
+        rank, local_rank, world_size = 0, 0, 1
+        target_device = "cuda" if torch.cuda.is_available() else "cpu"
+
     layers = [int(x.strip()) for x in args.layers.split(",")]
     model = SLQMultiLayerEncoder(
         num_queries=args.num_queries,
         layers=layers,
         head_type=args.head_type,
         pooling=getattr(args, "pooling", "mean"),
+        device=target_device,
         dtype=getattr(args, "dtype", "auto"),
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
@@ -1067,7 +1126,7 @@ def evaluate(args):
         model.load_queries(args.queries)
 
     wandb_run = None
-    if args.use_wandb and not args.no_wandb:
+    if rank == 0 and args.use_wandb and not args.no_wandb:
         try:
             import wandb
             run_name = args.wandb_run_name or f"eval_{os.path.splitext(os.path.basename(args.queries))[0]}"
@@ -1081,9 +1140,17 @@ def evaluate(args):
         except Exception:
             wandb_run = None
 
-    run_evaluation(model, args, wandb_run=wandb_run)
+    run_evaluation(model, args, wandb_run=wandb_run, is_ddp=is_ddp, rank=rank, world_size=world_size)
 
-    if wandb_run is not None:
+    if is_ddp:
+        try:
+            dist.barrier(device_ids=[local_rank])
+        except TypeError:
+            dist.barrier()
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+    if rank == 0 and wandb_run is not None:
         import wandb
         wandb.finish()
 
