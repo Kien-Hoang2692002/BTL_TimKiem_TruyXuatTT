@@ -235,14 +235,15 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none"):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
             native_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
             dtype = torch.bfloat16 if native_bf16 else torch.float32
         self.inject_layer = max(1, int(inject_layer))
-        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | InjectLayer: {self.inject_layer} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
+        self.query_split = (query_split or "none").lower()
+        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | InjectLayer: {self.inject_layer} | Split: {self.query_split} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
@@ -291,14 +292,32 @@ class SLQMultiLayerEncoder(nn.Module):
         D = self.mllm.language_model.config.hidden_size
         self.hidden_dim = D
 
-        # N Query tokens học được (lưu ở float32 để cập nhật gradient ổn định).
-        # Nếu num_queries == 0: chế độ đối chứng trích xuất Last Token trực tiếp từ backbone.
-        if num_queries > 0:
+        self.meta_queries = None
+        self.query_norm = None
+        self.meta_queries_early = None
+        self.meta_queries_late = None
+        self.query_norm_late = None
+        self.meta_queries_prefix = None
+        self.meta_queries_suffix = None
+
+        half_q = max(1, num_queries // 2)
+        if num_queries == 0:
+            self.num_pool_queries = 0
+        elif self.query_split == "layer_split":
+            # 10 queries ở Layer 1 + 10 queries ở inject_layer (Layer 18). Chỉ pool 10 queries cuối.
+            self.meta_queries_early = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
+            self.meta_queries_late = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
+            self.query_norm_late = nn.LayerNorm(D, device=device)
+            self.num_pool_queries = half_q
+        elif self.query_split in ("seq_split", "prefix_suffix"):
+            # 10 queries ở đầu chuỗi (prefix) + 10 queries ở cuối chuỗi (suffix). Chỉ pool 10 queries cuối.
+            self.meta_queries_prefix = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
+            self.meta_queries_suffix = nn.Parameter(torch.randn(half_q, D, device=device) / math.sqrt(D))
+            self.num_pool_queries = half_q
+        else:
             self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
             self.query_norm = nn.LayerNorm(D, device=device)
-        else:
-            self.meta_queries = None
-            self.query_norm = None
+            self.num_pool_queries = num_queries
 
         self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device))
         self.backbone = self.mllm.language_model.model  # Qwen2Model
@@ -336,20 +355,45 @@ class SLQMultiLayerEncoder(nn.Module):
     def _run(self, embeds, mask):
         B = embeds.size(0)
         hook_handle = None
-        if self.num_queries > 0 and self.meta_queries is not None:
+
+        if self.num_queries == 0 or self.num_pool_queries == 0:
+            pass
+        elif self.query_split == "layer_split":
+            # 10 queries ở đầu mạng (Layer 1) + 10 queries ở cuối mạng (Layer inject_layer)
+            half_q = self.num_pool_queries
+            q_early = self.meta_queries_early.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+            q_late_dummy = torch.zeros(B, half_q, self.hidden_dim, dtype=self.dtype, device=embeds.device)
+            embeds = torch.cat([embeds, q_early, q_late_dummy], dim=1)
+            mask = torch.cat([mask, mask.new_ones(B, half_q * 2)], dim=1)
+
+            q_late_fresh = self.query_norm_late(self.meta_queries_late.to(self.dtype)).unsqueeze(0).expand(B, -1, -1)
+
+            def inject_hook(module, args):
+                h = args[0]
+                h_new = torch.cat([h[:, :-half_q], q_late_fresh], dim=1)
+                return (h_new,) + args[1:]
+
+            target_layer_idx = min(len(self.backbone.layers) - 1, max(0, self.inject_layer - 1))
+            hook_handle = self.backbone.layers[target_layer_idx].register_forward_pre_hook(inject_hook)
+
+        elif self.query_split in ("seq_split", "prefix_suffix"):
+            # 10 queries ở đầu chuỗi (prefix) + 10 queries ở cuối chuỗi (suffix)
+            q_prefix = self.meta_queries_prefix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+            q_suffix = self.meta_queries_suffix.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+            embeds = torch.cat([q_prefix, embeds, q_suffix], dim=1)
+            mask = torch.cat([mask.new_ones(B, q_prefix.size(1)), mask, mask.new_ones(B, q_suffix.size(1))], dim=1)
+
+        else:
+            # Chế độ thông thường
             if self.inject_layer <= 1:
-                # Cách truyền thống: chèn ngay tại input embedding
                 q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
                 embeds = torch.cat([embeds, q], dim=1)
                 mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
             else:
-                # Late / Mid-Layer Query Injection (LQI):
-                # 1. Chèn dummy tokens để cố định sequence length cho causal mask và rotary embedding
                 q_dummy = torch.zeros(B, self.num_queries, self.hidden_dim, dtype=self.dtype, device=embeds.device)
                 embeds = torch.cat([embeds, q_dummy], dim=1)
                 mask = torch.cat([mask, mask.new_ones(B, self.num_queries)], dim=1)
 
-                # 2. Query thật được chuẩn hóa qua LayerNorm để khớp biên độ activations tại tầng chèn
                 q_fresh = self.query_norm(self.meta_queries.to(self.dtype)).unsqueeze(0).expand(B, -1, -1)
 
                 def inject_hook(module, args):
@@ -379,9 +423,9 @@ class SLQMultiLayerEncoder(nn.Module):
         for l_idx in self.layers:
             # l_idx có thể âm (vd -1 là last layer, -2 là áp chót...)
             h_layer = all_hidden_states[l_idx]
-            if self.num_queries > 0 and self.meta_queries is not None:
-                # Cắt N vị trí query cuối cùng
-                q_tokens = h_layer[:, -self.num_queries:]
+            if self.num_pool_queries > 0:
+                # Cắt đúng num_pool_queries vị trí cuối cùng (luôn là 10 tokens cuối chuỗi / cuối tầng)
+                q_tokens = h_layer[:, -self.num_pool_queries:]
                 if self.pooling == "last":
                     feat = q_tokens[:, -1, :].float()
                 elif self.pooling == "max":
@@ -438,10 +482,13 @@ class SLQMultiLayerEncoder(nn.Module):
 
     def get_trainable_params(self):
         params = []
-        if self.meta_queries is not None:
-            params.append(self.meta_queries)
-        if hasattr(self, "query_norm") and self.query_norm is not None:
-            params.extend(list(self.query_norm.parameters()))
+        for p in [self.meta_queries, self.meta_queries_early, self.meta_queries_late,
+                  self.meta_queries_prefix, self.meta_queries_suffix]:
+            if p is not None:
+                params.append(p)
+        for norm in [self.query_norm, self.query_norm_late]:
+            if norm is not None:
+                params.extend(list(norm.parameters()))
         params.append(self.logit_scale)
         if self.head is not None:
             params.extend(list(self.head.parameters()))
@@ -455,21 +502,30 @@ class SLQMultiLayerEncoder(nn.Module):
             "num_queries": self.num_queries,
             "pooling": self.pooling,
             "inject_layer": getattr(self, "inject_layer", 1),
+            "query_split": getattr(self, "query_split", "none"),
         }
-        if self.meta_queries is not None:
-            ck["meta_queries"] = self.meta_queries.detach().cpu()
-        if hasattr(self, "query_norm") and self.query_norm is not None:
-            ck["query_norm_state_dict"] = self.query_norm.state_dict()
+        for name in ["meta_queries", "meta_queries_early", "meta_queries_late", "meta_queries_prefix", "meta_queries_suffix"]:
+            param = getattr(self, name, None)
+            if param is not None:
+                ck[name] = param.detach().cpu()
+        for name in ["query_norm", "query_norm_late"]:
+            norm = getattr(self, name, None)
+            if norm is not None:
+                ck[f"{name}_state_dict"] = norm.state_dict()
         if self.head is not None:
             ck["head_state_dict"] = self.head.state_dict()
         torch.save(ck, path)
 
     def load_queries(self, path):
         ck = torch.load(path, map_location="cpu")
-        if "meta_queries" in ck and ck["meta_queries"] is not None and self.meta_queries is not None:
-            self.meta_queries.data.copy_(ck["meta_queries"])
-        if "query_norm_state_dict" in ck and hasattr(self, "query_norm") and self.query_norm is not None:
-            self.query_norm.load_state_dict(ck["query_norm_state_dict"])
+        for name in ["meta_queries", "meta_queries_early", "meta_queries_late", "meta_queries_prefix", "meta_queries_suffix"]:
+            param = getattr(self, name, None)
+            if param is not None and name in ck and ck[name] is not None:
+                param.data.copy_(ck[name])
+        for name in ["query_norm", "query_norm_late"]:
+            norm = getattr(self, name, None)
+            if norm is not None and f"{name}_state_dict" in ck:
+                norm.load_state_dict(ck[f"{name}_state_dict"])
         if "logit_scale" in ck:
             self.logit_scale.data.copy_(ck["logit_scale"])
         if "head_state_dict" in ck and self.head is not None:
@@ -650,6 +706,7 @@ def train(args):
         device=target_device,
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
+        query_split=getattr(args, "query_split", "none"),
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
@@ -723,6 +780,7 @@ def train(args):
                     "cache_file": args.cache_file,
                     "attn_implementation": args.attn_implementation,
                     "inject_layer": getattr(args, "inject_layer", 1),
+                    "query_split": getattr(args, "query_split", "none"),
                     "total_param_count": total_param_count,
                 }
             )
@@ -733,11 +791,8 @@ def train(args):
 
     # Áp dụng weight_decay nhỏ cho Head nếu dùng MLP/Linear/CrossAttn/Residual
     if model.head is not None and model.head_type in ("mlp", "linear", "cross_attn", "attention", "residual"):
-        base_params = [model.logit_scale]
-        if model.meta_queries is not None:
-            base_params.append(model.meta_queries)
-        if hasattr(model, "query_norm") and model.query_norm is not None:
-            base_params.extend(list(model.query_norm.parameters()))
+        head_param_ids = set(id(p) for p in model.head.parameters())
+        base_params = [p for p in trainable_params if id(p) not in head_param_ids]
         param_groups = [
             {"params": base_params, "weight_decay": 0.0},
             {"params": list(model.head.parameters()), "weight_decay": 1e-3},
@@ -948,6 +1003,7 @@ def evaluate(args):
         pooling=getattr(args, "pooling", "mean"),
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
+        query_split=getattr(args, "query_split", "none"),
     )
     if args.queries != "init":
         model.load_queries(args.queries)
@@ -962,7 +1018,7 @@ def evaluate(args):
                 entity=args.wandb_entity,
                 name=run_name,
                 job_type="eval",
-                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean"), "inject_layer": getattr(args, "inject_layer", 1)}
+                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean"), "inject_layer": getattr(args, "inject_layer", 1), "query_split": getattr(args, "query_split", "none")}
             )
         except Exception:
             wandb_run = None
@@ -979,6 +1035,7 @@ if __name__ == "__main__":
     ap.add_argument("mode", choices=["train", "eval"])
     ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20; đặt 0 để chạy đối chứng Last Token trên backbone)")
     ap.add_argument("--inject_layer", type=int, default=1, help="Tầng bắt đầu chèn Latent Queries (mặc định 1: chèn tại input; hoặc 18, 20, 23)")
+    ap.add_argument("--query_split", default="none", choices=["none", "layer_split", "seq_split", "prefix_suffix"], help="Chế độ chia query: 'none' (chuẩn), 'layer_split' (10 tại L1 + 10 tại inject_layer), 'seq_split' (10 prefix + 10 suffix)")
     ap.add_argument("--pooling", default="mean", choices=["mean", "last", "max"], help="Chiến lược pooling qua N queries: 'mean' (mặc định), 'last', hoặc 'max'")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
     ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted", "none", "identity"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'linear', 'none', ...")
