@@ -235,13 +235,14 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None:
             native_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
             dtype = torch.bfloat16 if native_bf16 else torch.float32
-        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
+        self.inject_layer = max(1, int(inject_layer))
+        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} | InjectLayer: {self.inject_layer} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
@@ -294,8 +295,10 @@ class SLQMultiLayerEncoder(nn.Module):
         # Nếu num_queries == 0: chế độ đối chứng trích xuất Last Token trực tiếp từ backbone.
         if num_queries > 0:
             self.meta_queries = nn.Parameter(torch.randn(num_queries, D, device=device) / math.sqrt(D))
+            self.query_norm = nn.LayerNorm(D, device=device)
         else:
             self.meta_queries = None
+            self.query_norm = None
 
         self.logit_scale = nn.Parameter(torch.tensor(0.07, device=device))
         self.backbone = self.mllm.language_model.model  # Qwen2Model
@@ -332,18 +335,43 @@ class SLQMultiLayerEncoder(nn.Module):
 
     def _run(self, embeds, mask):
         B = embeds.size(0)
+        hook_handle = None
         if self.num_queries > 0 and self.meta_queries is not None:
-            q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
-            embeds = torch.cat([embeds, q], dim=1)
-            mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
+            if self.inject_layer <= 1:
+                # Cách truyền thống: chèn ngay tại input embedding
+                q = self.meta_queries.to(self.dtype).unsqueeze(0).expand(B, -1, -1)
+                embeds = torch.cat([embeds, q], dim=1)
+                mask = torch.cat([mask, mask.new_ones(B, q.size(1))], dim=1)
+            else:
+                # Late / Mid-Layer Query Injection (LQI):
+                # 1. Chèn dummy tokens để cố định sequence length cho causal mask và rotary embedding
+                q_dummy = torch.zeros(B, self.num_queries, self.hidden_dim, dtype=self.dtype, device=embeds.device)
+                embeds = torch.cat([embeds, q_dummy], dim=1)
+                mask = torch.cat([mask, mask.new_ones(B, self.num_queries)], dim=1)
+
+                # 2. Query thật được chuẩn hóa qua LayerNorm để khớp biên độ activations tại tầng chèn
+                q_fresh = self.query_norm(self.meta_queries.to(self.dtype)).unsqueeze(0).expand(B, -1, -1)
+
+                def inject_hook(module, args):
+                    h = args[0]
+                    h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
+                    return (h_new,) + args[1:]
+
+                target_layer_idx = min(len(self.backbone.layers) - 1, max(0, self.inject_layer - 1))
+                hook_handle = self.backbone.layers[target_layer_idx].register_forward_pre_hook(inject_hook)
 
         # Trích xuất hidden states từ toàn bộ các layer
-        outputs = self.backbone(
-            inputs_embeds=embeds,
-            attention_mask=mask,
-            use_cache=False,
-            output_hidden_states=True
-        )
+        try:
+            outputs = self.backbone(
+                inputs_embeds=embeds,
+                attention_mask=mask,
+                use_cache=False,
+                output_hidden_states=True
+            )
+        finally:
+            if hook_handle is not None:
+                hook_handle.remove()
+
         all_hidden_states = outputs.hidden_states  # Tuple gồm (embed_out, layer_0, ..., layer_last)
 
         # Lấy hidden states ở các layer được chỉ định
@@ -412,6 +440,8 @@ class SLQMultiLayerEncoder(nn.Module):
         params = []
         if self.meta_queries is not None:
             params.append(self.meta_queries)
+        if hasattr(self, "query_norm") and self.query_norm is not None:
+            params.extend(list(self.query_norm.parameters()))
         params.append(self.logit_scale)
         if self.head is not None:
             params.extend(list(self.head.parameters()))
@@ -424,9 +454,12 @@ class SLQMultiLayerEncoder(nn.Module):
             "head_type": self.head_type,
             "num_queries": self.num_queries,
             "pooling": self.pooling,
+            "inject_layer": getattr(self, "inject_layer", 1),
         }
         if self.meta_queries is not None:
             ck["meta_queries"] = self.meta_queries.detach().cpu()
+        if hasattr(self, "query_norm") and self.query_norm is not None:
+            ck["query_norm_state_dict"] = self.query_norm.state_dict()
         if self.head is not None:
             ck["head_state_dict"] = self.head.state_dict()
         torch.save(ck, path)
@@ -435,6 +468,8 @@ class SLQMultiLayerEncoder(nn.Module):
         ck = torch.load(path, map_location="cpu")
         if "meta_queries" in ck and ck["meta_queries"] is not None and self.meta_queries is not None:
             self.meta_queries.data.copy_(ck["meta_queries"])
+        if "query_norm_state_dict" in ck and hasattr(self, "query_norm") and self.query_norm is not None:
+            self.query_norm.load_state_dict(ck["query_norm_state_dict"])
         if "logit_scale" in ck:
             self.logit_scale.data.copy_(ck["logit_scale"])
         if "head_state_dict" in ck and self.head is not None:
@@ -614,6 +649,7 @@ def train(args):
         pooling=getattr(args, "pooling", "mean"),
         device=target_device,
         attn_implementation=args.attn_implementation,
+        inject_layer=getattr(args, "inject_layer", 1),
     )
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
@@ -686,6 +722,7 @@ def train(args):
                     "seed": args.seed,
                     "cache_file": args.cache_file,
                     "attn_implementation": args.attn_implementation,
+                    "inject_layer": getattr(args, "inject_layer", 1),
                     "total_param_count": total_param_count,
                 }
             )
@@ -699,6 +736,8 @@ def train(args):
         base_params = [model.logit_scale]
         if model.meta_queries is not None:
             base_params.append(model.meta_queries)
+        if hasattr(model, "query_norm") and model.query_norm is not None:
+            base_params.extend(list(model.query_norm.parameters()))
         param_groups = [
             {"params": base_params, "weight_decay": 0.0},
             {"params": list(model.head.parameters()), "weight_decay": 1e-3},
@@ -908,6 +947,7 @@ def evaluate(args):
         head_type=args.head_type,
         pooling=getattr(args, "pooling", "mean"),
         attn_implementation=args.attn_implementation,
+        inject_layer=getattr(args, "inject_layer", 1),
     )
     if args.queries != "init":
         model.load_queries(args.queries)
@@ -922,7 +962,7 @@ def evaluate(args):
                 entity=args.wandb_entity,
                 name=run_name,
                 job_type="eval",
-                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean")}
+                config={"queries": args.queries, "layers": args.layers, "head_type": args.head_type, "pooling": getattr(args, "pooling", "mean"), "inject_layer": getattr(args, "inject_layer", 1)}
             )
         except Exception:
             wandb_run = None
@@ -938,6 +978,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["train", "eval"])
     ap.add_argument("--num_queries", type=int, default=20, help="Số lượng Latent Queries (mặc định 20; đặt 0 để chạy đối chứng Last Token trên backbone)")
+    ap.add_argument("--inject_layer", type=int, default=1, help="Tầng bắt đầu chèn Latent Queries (mặc định 1: chèn tại input; hoặc 18, 20, 23)")
     ap.add_argument("--pooling", default="mean", choices=["mean", "last", "max"], help="Chiến lược pooling qua N queries: 'mean' (mặc định), 'last', hoặc 'max'")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
     ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted", "none", "identity"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'linear', 'none', ...")
