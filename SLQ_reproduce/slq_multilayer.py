@@ -37,6 +37,8 @@ import random
 import sys
 import time
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -466,6 +468,11 @@ class SLQMultiLayerEncoder(nn.Module):
         emb = self.backbone.get_input_embeddings()(enc.input_ids)
         return self._run(emb, enc.attention_mask)
 
+    def encode_text_from_tokens(self, input_ids, attention_mask):
+        """Mã hóa văn bản trực tiếp từ input_ids và attention_mask đã được tiền xử lý song song trong DataLoader."""
+        emb = self.backbone.get_input_embeddings()(input_ids)
+        return self._run(emb, attention_mask)
+
     def encode_image_from_vit(self, vit):
         """Chạy trực tiếp từ visual tokens [B, 256, D] mà không cần chạy qua ViT."""
         B = vit.size(0)
@@ -478,7 +485,7 @@ class SLQMultiLayerEncoder(nn.Module):
 
         _, base_emb, mask, ctx_mask = self._cached_img_prompt
         emb = base_emb.clone()
-        emb[ctx_mask] = vit.to(self.device, self.dtype).reshape(-1, vit.size(-1))
+        emb[ctx_mask] = vit.to(self.device, self.dtype, non_blocking=True).reshape(-1, vit.size(-1))
         return self._run(emb, mask)
 
     def encode_image(self, pixels):
@@ -569,14 +576,26 @@ class PairDataset(Dataset):
             return None
 
 
-def collate(batch):
-    batch = [b for b in batch if b is not None]
-    if not batch:
-        return None
-    is_cached = batch[0][2]
-    items = torch.stack([b[0] for b in batch])
-    caps = [b[1] for b in batch]
-    return items, caps, is_cached
+class TextCollateFn:
+    """Collate function xử lý batch và tokenize văn bản song song ngầm trên các worker CPU của DataLoader."""
+    def __init__(self, tokenizer):
+        self.tok = tokenizer
+
+    def __call__(self, batch):
+        batch = [b for b in batch if b is not None]
+        if not batch:
+            return None
+        is_cached = batch[0][2]
+        items = torch.stack([b[0] for b in batch])
+        caps = [b[1] for b in batch]
+        enc = self.tok(
+            [TEMPLATE.format(input=t) for t in caps],
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=128
+        )
+        return items, enc.input_ids, enc.attention_mask, is_cached
 
 
 def precompute_coco_features(model, pairs, cache_path, batch_size=64):
@@ -755,11 +774,11 @@ def train(args):
         shuffle=(sampler is None),
         sampler=sampler,
         num_workers=args.workers,
-        collate_fn=collate,
+        collate_fn=TextCollateFn(model.tok),
         drop_last=True,
         pin_memory=torch.cuda.is_available(),
         persistent_workers=(args.workers > 0),
-        prefetch_factor=2 if args.workers > 0 else None,
+        prefetch_factor=3 if args.workers > 0 else None,
     )
 
     trainable_params = model.get_trainable_params()
@@ -831,12 +850,15 @@ def train(args):
     for ep in range(args.epochs):
         if is_ddp and sampler is not None:
             sampler.set_epoch(ep)
-        for items, caps, is_cached in dl:
+        for items, text_ids, text_mask, is_cached in dl:
+            items = items.to(target_device, non_blocking=True)
+            text_ids = text_ids.to(target_device, non_blocking=True)
+            text_mask = text_mask.to(target_device, non_blocking=True)
             if is_cached:
                 zi = model.encode_image_from_vit(items)
             else:
                 zi = model.encode_image(items)
-            zt = model.encode_text(caps)
+            zt = model.encode_text_from_tokens(text_ids, text_mask)
             if not torch.isfinite(zi).all() or not torch.isfinite(zt).all():
                 raise RuntimeError("Embedding bị NaN/Inf - dừng huấn luyện")
 

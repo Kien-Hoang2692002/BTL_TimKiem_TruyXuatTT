@@ -18,10 +18,10 @@ CACHE_FILE=${2:-"coco_train2017_vit_cache.pt"}
 MAX_PAIRS=${MAX_PAIRS:-0}       # 0 = toàn bộ ~118k ảnh COCO
 EPOCHS=${EPOCHS:-5}             # 5 epochs chuẩn bài báo
 NUM_GPUS=${NUM_GPUS:-4}         # 4 GPU A100
-BATCH_SIZE=${BATCH_SIZE:-128}   # Micro batch size mỗi GPU
-GRAD_ACCUM=${GRAD_ACCUM:-2}     # Global Batch Size = 128 x 4 x 2 = 1024
+BATCH_SIZE=${BATCH_SIZE:-256}   # Micro batch size 256 bão hòa Tensor Cores A100
+GRAD_ACCUM=${GRAD_ACCUM:-1}     # Global Batch Size = 256 x 4 x 1 = 1024
 LR=5e-4
-WORKERS=4
+WORKERS=6
 MASTER_PORT=${MASTER_PORT:-29502}
 
 echo "=================================================================="
@@ -78,3 +78,4 @@ torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilaye
 echo -e "\n=================================================================="
 echo ">>> HOÀN THÀNH TẤT CẢ 3 THÍ NGHIỆM MỞ RỘNG!"
 echo "=================================================================="
+
