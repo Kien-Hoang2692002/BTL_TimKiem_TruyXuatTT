@@ -1061,10 +1061,11 @@ def run_evaluation(model, args, wandb_run=None, efficiency_info=None, is_ddp=Fal
             print(f"  {len(images)} ảnh, {len(texts)} caption (phân bổ song song qua {world_size} GPUs)")
         zt = embed_all(model, texts, "text", args.batch_size * 2, is_ddp=is_ddp, rank=rank, world_size=world_size)
         zi = embed_all(model, images, "image", args.batch_size, is_ddp=is_ddp, rank=rank, world_size=world_size)
-        s = zt @ zi.t()  # [T, I]
-        pos = torch.zeros_like(s, dtype=torch.bool)
-        pos[torch.arange(len(texts)), torch.tensor(img_of_text)] = True
         if rank == 0:
+            s = zt @ zi.t()  # [T, I]
+            pos = torch.zeros_like(s, dtype=torch.bool)
+            pos[torch.arange(len(texts)), torch.tensor(img_of_text)] = True
+            t2i, i2t = recall(s, pos), recall(s.t(), pos.t())
             results[name] = {"T2I": t2i, "I2T": i2t}
             print(f"  Image->Text R@1/5/10: {i2t[1]:.2f} / {i2t[5]:.2f} / {i2t[10]:.2f}")
             print(f"  Text->Image R@1/5/10: {t2i[1]:.2f} / {t2i[5]:.2f} / {t2i[10]:.2f}")
