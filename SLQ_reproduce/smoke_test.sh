@@ -14,15 +14,17 @@ set -e
 
 COCO_ROOT=${1:-"./data/coco2017"}
 CACHE_FILE=${2:-"coco_train2017_vit_cache.pt"}
+ATTN_IMPL=${3:-${ATTN_IMPL:-"flash_attention_2"}}
 NUM_GPUS=${NUM_GPUS:-4}
 MASTER_PORT=${MASTER_PORT:-29599}
 
 echo "=================================================================="
 echo "    BẮT ĐẦU SMOKE TEST NHANH (DỰ KIẾN ~30 - 45 GIÂY)"
 echo "=================================================================="
-echo "COCO Root   : $COCO_ROOT"
-echo "Cache File  : $CACHE_FILE"
-echo "Số GPUs     : $NUM_GPUS"
+echo "COCO Root         : $COCO_ROOT"
+echo "Cache File        : $CACHE_FILE"
+echo "Attention Backend : $ATTN_IMPL"
+echo "Số GPUs           : $NUM_GPUS"
 echo "=================================================================="
 
 # Kiểm tra file cache
@@ -38,7 +40,7 @@ torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilaye
     --epochs 1 \
     --batch_size 128 \
     --grad_accum_steps 1 \
-    --attn_implementation flash_attention_2 \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 \
     --num_prefix_queries 5 \
     --inject_layer 18 \

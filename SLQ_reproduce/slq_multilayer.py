@@ -272,16 +272,26 @@ class SLQMultiLayerEncoder(nn.Module):
         self.mllm = None
         last_err = None
         for attn in attn_candidates:
-            for low_cpu in [True, False]:
+            # Ưu tiên device_map trực tiếp lên GPU để tránh lỗi CPU-context của FlashAttention-2
+            configs = []
+            if str(device).startswith("cuda"):
+                configs.append({"device_map": {"": device}})
+            configs.append({"low_cpu_mem_usage": True})
+            configs.append({"low_cpu_mem_usage": False})
+
+            for cfg in configs:
                 kwargs = {
                     "torch_dtype": dtype,
-                    "low_cpu_mem_usage": low_cpu,
                     "trust_remote_code": True,
+                    **cfg
                 }
                 if attn is not None:
                     kwargs["attn_implementation"] = attn
                 try:
-                    self.mllm = AutoModel.from_pretrained(MODEL_ID, **kwargs).to(device).eval()
+                    loaded = AutoModel.from_pretrained(MODEL_ID, **kwargs).eval()
+                    if "device_map" not in cfg:
+                        loaded = loaded.to(device)
+                    self.mllm = loaded
                     break
                 except Exception as e:
                     last_err = e
@@ -294,13 +304,14 @@ class SLQMultiLayerEncoder(nn.Module):
 
         active_attn = getattr(getattr(self.mllm, "config", None), "_attn_implementation", "unknown")
         if attn_implementation is not None and active_attn != attn_implementation:
-            print(f"⚠️ [WARNING] Requested attn_implementation='{attn_implementation}', but active backend is '{active_attn}' (fallback applied: {last_err}).")
+            print(f"⚠️ [WARNING] Requested attn_implementation='{attn_implementation}', but active backend is '{active_attn}' (fallback applied: {last_err}).", flush=True)
         else:
-            print(f"✅ Backbone loaded successfully with Attention Backend: {active_attn}")
+            print(f"✅ Backbone loaded successfully with Attention Backend: {active_attn}", flush=True)
 
         self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
         self.tok.padding_side = "left"
         self.img_ctx_id = self.tok.convert_tokens_to_ids("<IMG_CONTEXT>")
+        sys.stdout.flush()
         for p in self.mllm.parameters():
             p.requires_grad = False
 
@@ -668,6 +679,18 @@ def precompute_coco_features(model, pairs, cache_path, batch_size=64):
 
 
 def find_coco(coco_root):
+    # 1. Kiểm tra nhanh các cấu trúc thư mục chuẩn (0.001s, không quét toàn bộ ổ đĩa)
+    fast_candidates = [
+        (os.path.join(coco_root, "annotations", "captions_train2017.json"), os.path.join(coco_root, "train2017")),
+        (os.path.join(coco_root, "captions_train2017.json"), os.path.join(coco_root, "train2017")),
+        (os.path.join(coco_root, "annotations", "captions_train2017.json"), os.path.join(coco_root, "images", "train2017")),
+        (os.path.join(coco_root, "train2017.json"), os.path.join(coco_root, "train2017")),
+    ]
+    for ann_p, img_p in fast_candidates:
+        if os.path.isfile(ann_p) and os.path.isdir(img_p):
+            return ann_p, img_p
+
+    # 2. Fallback tìm kiếm đệ quy nếu đặt ở đường dẫn tùy biến
     ann_path = img_dir = None
     for base in [coco_root, "/kaggle/input"]:
         if not base or not os.path.isdir(base):
@@ -686,7 +709,7 @@ def find_coco(coco_root):
 
 def load_coco_train_pairs(coco_root, max_pairs, seed):
     ann_path, img_dir = find_coco(coco_root)
-    print("COCO annotations:", ann_path, "| ảnh:", img_dir)
+    print("COCO annotations:", ann_path, "| ảnh:", img_dir, flush=True)
     ann = json.load(open(ann_path))
     id2file = {im["id"]: im["file_name"] for im in ann["images"]}
     random.Random(seed).shuffle(ann["annotations"])
@@ -772,20 +795,20 @@ def train(args):
 
     pairs = load_coco_train_pairs(args.coco_root, args.max_pairs, args.seed)
     if rank == 0:
-        print(f"Số cặp huấn luyện: {len(pairs)}")
+        print(f"Số cặp huấn luyện: {len(pairs)}", flush=True)
 
     cache_dict = None
     if args.cache_file:
         if os.path.isfile(args.cache_file):
             if rank == 0:
-                print(f"Đang nạp ViT feature cache từ {args.cache_file}...")
+                print(f"Đang nạp ViT feature cache từ {args.cache_file} (tệp lớn ~50GB, vui lòng đợi)...", flush=True)
             t0 = time.time()
             cache_dict = torch.load(args.cache_file, map_location="cpu", weights_only=True)
             if rank == 0:
-                print(f"Đã nạp {len(cache_dict)} cached features trong {time.time() - t0:.2f}s!")
+                print(f"Đã nạp {len(cache_dict)} cached features trong {time.time() - t0:.2f}s!", flush=True)
         else:
             if rank == 0:
-                print(f"Cache file {args.cache_file} chưa tồn tại. Bắt đầu precompute...")
+                print(f"Cache file {args.cache_file} chưa tồn tại. Bắt đầu precompute...", flush=True)
                 cache_dict = precompute_coco_features(
                     model, pairs, args.cache_file, batch_size=args.cache_batch_size
                 )
@@ -793,6 +816,9 @@ def train(args):
                 dist.barrier()
             if rank != 0:
                 cache_dict = torch.load(args.cache_file, map_location="cpu", weights_only=True)
+
+    if rank == 0:
+        print(f"Khởi tạo DataLoader với {args.workers} workers...", flush=True)
 
     sampler = DistributedSampler(PairDataset(pairs, cache_dict=cache_dict), shuffle=True, seed=args.seed) if is_ddp else None
     dl = DataLoader(
