@@ -1240,7 +1240,7 @@ if __name__ == "__main__":
     ap.add_argument("--use_wandb", action="store_true", default=bool(os.environ.get("WANDB_API_KEY")),
                     help="Bật logging lên Weights & Biases (tự động bật nếu có WANDB_API_KEY)")
     ap.add_argument("--no_wandb", action="store_true", help="Tắt logging Wandb ngay cả khi có API key")
-    ap.add_argument("--wandb_project", default="slq-retrieval", help="Tên Wandb project")
+    ap.add_argument("--wandb_project", default="slq-benchmark-final", help="Tên Wandb project")
     ap.add_argument("--wandb_entity", default=None, help="Tên user/entity Wandb (tùy chọn)")
     ap.add_argument("--wandb_run_name", default=None, help="Tên run trên Wandb")
     ap.add_argument("--eval_after_train", action="store_true", default=True, help="Tự động đánh giá ngay sau khi train")

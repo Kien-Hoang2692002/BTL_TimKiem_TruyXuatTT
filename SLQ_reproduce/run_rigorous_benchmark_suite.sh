@@ -43,8 +43,8 @@ GRAD_ACCUM=${GRAD_ACCUM:-1}     # Global Batch Size = 256 x 4 x 1 = 1024
 LR=5e-4
 WORKERS=6
 MASTER_PORT=${MASTER_PORT:-29505}
-WANDB_PROJECT=${3:-${WANDB_PROJECT:-"slq-benchmark-suite"}}
-ATTN_IMPL=${ATTN_IMPL:-"eager"}
+WANDB_PROJECT=${3:-${WANDB_PROJECT:-"slq-benchmark-final"}}
+ATTN_IMPL="eager"
 
 echo "=================================================================="
 echo "    BỘ THỰC NGHIỆM ĐỒNG NHẤT CHUẨN HỌC THUẬT (12 RUNS BF16)"
