@@ -4,7 +4,7 @@ import sys
 import json
 import argparse
 
-def get_runs(project="slq-retrieval", entity=None):
+def get_runs(project="slq-benchmark-suite", entity=None):
     try:
         import wandb
         api = wandb.Api()
@@ -41,7 +41,7 @@ def format_table(headers, rows):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", default=os.environ.get("WANDB_PROJECT", "slq-retrieval"))
+    parser.add_argument("--project", default=os.environ.get("WANDB_PROJECT", "slq-benchmark-suite"))
     parser.add_argument("--entity", default=os.environ.get("WANDB_ENTITY", None))
     parser.add_argument("--out", default="benchmark_report.md")
     args = parser.parse_args()

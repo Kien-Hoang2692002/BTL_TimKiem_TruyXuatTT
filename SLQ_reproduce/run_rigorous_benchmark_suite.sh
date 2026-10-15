@@ -43,7 +43,7 @@ GRAD_ACCUM=${GRAD_ACCUM:-1}     # Global Batch Size = 256 x 4 x 1 = 1024
 LR=5e-4
 WORKERS=6
 MASTER_PORT=${MASTER_PORT:-29505}
-WANDB_PROJECT=${WANDB_PROJECT:-"slq-retrieval"}
+WANDB_PROJECT=${3:-${WANDB_PROJECT:-"slq-benchmark-suite"}}
 
 echo "=================================================================="
 echo "    BỘ THỰC NGHIỆM ĐỒNG NHẤT CHUẨN HỌC THUẬT (12 RUNS BF16)"
@@ -188,5 +188,15 @@ torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilaye
 
 echo -e "\n=================================================================="
 echo ">>> HOÀN THÀNH TOÀN BỘ 12 RUNS THỰC NGHIỆM!"
-echo ">>> Chạy 'python SLQ_reproduce/aggregate_benchmark.py' để xuất bảng tổng hợp khoa học!"
+echo ">>> Đang kết nối Wandb để tổng hợp số liệu và in bảng phân tích..."
 echo "=================================================================="
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_REPORT="${REPORT_FILE:-"$SCRIPT_DIR/benchmark_report.md"}"
+
+python3 "$SCRIPT_DIR/aggregate_benchmark.py" --project "$WANDB_PROJECT" --out "$OUTPUT_REPORT"
+
+echo -e "\n=================================================================="
+echo ">>> BẢNG PHÂN TÍCH ĐÃ ĐƯỢC LƯU THÀNH CÔNG TẠI:"
+echo ">>> $OUTPUT_REPORT"
+echo "==================================================================\n"
