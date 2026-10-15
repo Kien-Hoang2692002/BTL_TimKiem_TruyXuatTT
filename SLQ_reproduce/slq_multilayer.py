@@ -776,7 +776,7 @@ def train(args):
         rank, local_rank, world_size = 0, 0, 1
         target_device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    torch.manual_seed(args.seed + rank)
+    torch.manual_seed(args.seed)
     layers = [int(x.strip()) for x in args.layers.split(",")]
     model = SLQMultiLayerEncoder(
         num_queries=args.num_queries,
@@ -790,6 +790,13 @@ def train(args):
         query_split=getattr(args, "query_split", "none"),
         num_prefix_queries=getattr(args, "num_prefix_queries", 0),
     )
+
+    # Đảm bảo 100% tất cả các GPU có chung trọng số khởi tạo ban đầu
+    if is_ddp and world_size > 1:
+        for p in model.get_trainable_params():
+            dist.broadcast(p.data, src=0)
+        dist.barrier()
+
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.backbone.train()
 
@@ -1002,6 +1009,11 @@ def train(args):
         print(f"Đã lưu thành công tại {args.out}. Số tham số: {total_param_count:,}")
 
     if args.eval_after_train:
+        model.eval()
+        if is_ddp and world_size > 1:
+            for p in model.get_trainable_params():
+                dist.broadcast(p.data, src=0)
+            dist.barrier()
         if rank == 0:
             print(f"\n=== Đánh giá mô hình ngay sau huấn luyện (Song song qua {world_size} GPUs) ===")
         run_evaluation(model, args, wandb_run=wandb_run if rank == 0 else None, efficiency_info=efficiency_info if rank == 0 else None, is_ddp=is_ddp, rank=rank, world_size=world_size)
@@ -1157,6 +1169,13 @@ def evaluate(args):
     )
     if args.queries != "init":
         model.load_queries(args.queries)
+
+    # Đảm bảo 100% tất cả các GPU có chung trọng số khi đánh giá
+    model.eval()
+    if is_ddp and world_size > 1:
+        for p in model.get_trainable_params():
+            dist.broadcast(p.data, src=0)
+        dist.barrier()
 
     wandb_run = None
     if rank == 0 and args.use_wandb and not args.no_wandb:
