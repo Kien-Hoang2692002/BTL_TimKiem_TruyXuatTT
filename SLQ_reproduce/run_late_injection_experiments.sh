@@ -2,19 +2,10 @@
 set -e
 
 # ==============================================================================
-# NGHIÊN CỨU MỞ RỘNG: LATE QUERY INJECTION (LQI) / MID-LAYER INJECTION
+# 2 THÍ NGHIỆM LATE QUERY INJECTION (CHÈN TẦNG 18) TRÊN CỤM 4 GPU A100
 #
-# Giả thuyết khoa học:
-#   Thay vì chèn 20 Query tokens ngay tại Layer 1 (gây nhiễu biểu diễn ban đầu của
-#   backbone LLM), ta để các token hình ảnh và văn bản tự tương tác thuần túy đến
-#   tầng sâu (Layer 18, 20 hoặc 23), khi các đặc trưng đã chín muồi mới chèn Query
-#   tokens đóng vai trò như một Attentive Reader / Resampler để đóng gói biểu diễn.
-#
-# Chuỗi thí nghiệm:
-#   [LQI-1] Chèn tại Layer 20 + 4 Layer cuối (21,22,23,24) + Residual Refinement
-#   [LQI-2] Chèn tại Layer 20 + 1 Layer cuối 24 (So sánh trực tiếp với SLQ gốc)
-#   [LQI-3] Chèn tại Layer 23 + 1 Layer cuối 24 (Kiểm chứng chèn cực muộn)
-#   [LQI-4] Chèn tại Layer 18 + 4 Layer cuối (21,22,23,24) + Residual Refinement
+# Thí nghiệm 1: Chèn tầng 18 + Mean Pooling (Layer 24, đối đầu SLQ gốc)
+# Thí nghiệm 2: Chèn tầng 18 + 4 Layer cuối (21,22,23,24) + Residual Refinement
 #
 # Cách chạy:
 #   chmod +x run_late_injection_experiments.sh
@@ -33,7 +24,7 @@ WORKERS=4
 MASTER_PORT=${MASTER_PORT:-29501}
 
 echo "=================================================================="
-echo "    NGHIÊN CỨU MỞ RỘNG: LATE QUERY INJECTION (LQI) TRÊN 4 GPU A100"
+echo "    2 THÍ NGHIỆM LATE QUERY INJECTION (CHÈN TẦNG 18) TRÊN 4 GPU A100"
 echo "=================================================================="
 echo "COCO Root            : $COCO_ROOT"
 echo "Cache File           : $CACHE_FILE"
@@ -50,42 +41,20 @@ if [ ! -f "$CACHE_FILE" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# [LQI-1] Chèn Layer 20 + 4 Layer cuối + Residual Refinement
+# [1/2] Chèn Tầng 18 + Mean Pooling (Layer 24) [Đối đầu trực tiếp SLQ gốc bài báo]
 # ------------------------------------------------------------------------------
-echo -e "\n>>> [LQI-1] CHÈN LAYER 20 + 4 LAYER CUỐI (21,22,23,24) + RESIDUAL REFINEMENT..."
+echo -e "\n>>> [1/2] THÍ NGHIỆM 1: CHÈN TẦNG 18 + LAYER 24 (MEAN POOLING)..."
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
-    --inject_layer 20 --layers 21,22,23,24 --head_type residual --lr "$LR" --epochs "$EPOCHS" \
-    --out slq_lqi20_last4_residual.pt \
-    --wandb_run_name "exp_lqi20_last4_residual"
+    --inject_layer 18 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
+    --out slq_lqi18_l24_mean.pt \
+    --wandb_run_name "exp_lqi18_l24_mean"
 
 # ------------------------------------------------------------------------------
-# [LQI-2] Chèn Layer 20 + 1 Layer cuối 24 (So sánh đối đầu với SLQ gốc bài báo)
+# [2/2] Chèn Tầng 18 + 4 Layer cuối (21,22,23,24) + Residual Refinement
 # ------------------------------------------------------------------------------
-echo -e "\n>>> [LQI-2] CHÈN LAYER 20 + 1 LAYER 24 (MEAN POOLING, SO SÁNH SLQ GỐC)..."
-torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
-    --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
-    --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
-    --inject_layer 20 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
-    --out slq_lqi20_l24_mean.pt \
-    --wandb_run_name "exp_lqi20_l24_mean"
-
-# ------------------------------------------------------------------------------
-# [LQI-3] Chèn Layer 23 + 1 Layer cuối 24 (Kiểm chứng chèn cực muộn)
-# ------------------------------------------------------------------------------
-echo -e "\n>>> [LQI-3] CHÈN LAYER 23 + 1 LAYER 24 (KIỂM CHỨNG CHÈN CỰC MUỘN)..."
-torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
-    --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
-    --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
-    --inject_layer 23 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
-    --out slq_lqi23_l24_mean.pt \
-    --wandb_run_name "exp_lqi23_l24_mean"
-
-# ------------------------------------------------------------------------------
-# [LQI-4] Chèn Layer 18 + 4 Layer cuối (21,22,23,24) + Residual Refinement
-# ------------------------------------------------------------------------------
-echo -e "\n>>> [LQI-4] CHÈN LAYER 18 + 4 LAYER CUỐI (21,22,23,24) + RESIDUAL REFINEMENT..."
+echo -e "\n>>> [2/2] THÍ NGHIỆM 2: CHÈN TẦNG 18 + 4 LAYER CUỐI (21,22,23,24) + RESIDUAL REFINEMENT..."
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
@@ -94,5 +63,5 @@ torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilaye
     --wandb_run_name "exp_lqi18_last4_residual"
 
 echo -e "\n=================================================================="
-echo ">>> HOÀN THÀNH TẤT CẢ CÁC THÍ NGHIỆM LATE QUERY INJECTION (LQI)!"
+echo ">>> HOÀN THÀNH 2 THÍ NGHIỆM CHÈN TẦNG 18!"
 echo "=================================================================="
