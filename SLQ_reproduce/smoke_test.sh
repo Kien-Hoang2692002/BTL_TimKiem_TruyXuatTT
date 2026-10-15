@@ -38,6 +38,7 @@ torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilaye
     --epochs 1 \
     --batch_size 128 \
     --grad_accum_steps 1 \
+    --attn_implementation flash_attention_2 \
     --num_queries 20 \
     --num_prefix_queries 5 \
     --inject_layer 18 \
@@ -54,3 +55,4 @@ echo "=================================================================="
 
 # Dọn dẹp file tạm
 rm -f smoke_test_temp.pt results_multilayer_smoke_test_temp.json
+

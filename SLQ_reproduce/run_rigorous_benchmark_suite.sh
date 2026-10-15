@@ -44,6 +44,7 @@ LR=5e-4
 WORKERS=6
 MASTER_PORT=${MASTER_PORT:-29505}
 WANDB_PROJECT=${3:-${WANDB_PROJECT:-"slq-benchmark-suite"}}
+ATTN_IMPL=${ATTN_IMPL:-"flash_attention_2"}
 
 echo "=================================================================="
 echo "    BỘ THỰC NGHIỆM ĐỒNG NHẤT CHUẨN HỌC THUẬT (12 RUNS BF16)"
@@ -52,6 +53,7 @@ echo "COCO Root            : $COCO_ROOT"
 echo "Cache File           : $CACHE_FILE"
 echo "Số lượng GPUs (DDP)  : $NUM_GPUS A100"
 echo "Precision            : bfloat16 (Tự động)"
+echo "Attention Backend    : $ATTN_IMPL"
 echo "Global Batch Size    : $BATCH_SIZE x $NUM_GPUS x $GRAD_ACCUM = $((BATCH_SIZE * NUM_GPUS * GRAD_ACCUM))"
 echo "Số Epochs            : $EPOCHS"
 echo "Wandb Project        : $WANDB_PROJECT"
@@ -70,6 +72,7 @@ echo -e "\n>>> [1/12] NHÓM 1: BASELINE SLQ GỐC (20 Queries L1, L24 Mean Pooli
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 1 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp1_baseline_l1_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -83,6 +86,7 @@ echo -e "\n>>> [2/12] NHÓM 2 (Ablation 1): INJECT TẦNG 8 + L24 MEAN (33.3% de
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 8 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp2a_lqi8_l24_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -92,6 +96,7 @@ echo -e "\n>>> [3/12] NHÓM 2 (Ablation 1): INJECT TẦNG 12 + L24 MEAN (50.0% d
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 12 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp2b_lqi12_l24_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -101,6 +106,7 @@ echo -e "\n>>> [4/12] NHÓM 2 (Ablation 1): INJECT TẦNG 16 + L24 MEAN (66.7% d
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 16 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp2c_lqi16_l24_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -110,6 +116,7 @@ echo -e "\n>>> [5/12] NHÓM 2 (Ablation 1): INJECT TẦNG 20 + L24 MEAN (83.3% d
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 20 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp2d_lqi20_l24_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -123,6 +130,7 @@ echo -e "\n>>> [6/12] NHÓM 3 (Ablation 2): 2 TẦNG CUỐI [23, 24] + MEAN POOL
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 1 --layers 23,24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp3a_last2_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -132,6 +140,7 @@ echo -e "\n>>> [7/12] NHÓM 3 (Ablation 2): 4 TẦNG CUỐI [21, 22, 23, 24] + M
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 1 --layers 21,22,23,24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp3b_last4_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -141,6 +150,7 @@ echo -e "\n>>> [8/12] NHÓM 3 (Ablation 2): 4 TẦNG CUỐI [21, 22, 23, 24] + R
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 1 --layers 21,22,23,24 --head_type residual --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp3c_last4_residual.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -150,6 +160,7 @@ echo -e "\n>>> [9/12] NHÓM 3 (Ablation 2): 4 TẦNG CÁCH NHAU [12, 16, 20, 24]
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --inject_layer 1 --layers 12,16,20,24 --head_type residual --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp3d_spaced4_residual.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -163,6 +174,7 @@ echo -e "\n>>> [10/12] NHÓM 4 (Ablation 3): 5 PREFIX + 15 SUFFIX (TẦNG 1, MEA
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --num_prefix_queries 5 --inject_layer 1 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp4a_split_5pre_15suf_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -172,6 +184,7 @@ echo -e "\n>>> [11/12] NHÓM 4 (Ablation 3): 10 PREFIX + 10 SUFFIX (TẦNG 1, ME
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --num_prefix_queries 10 --inject_layer 1 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp4b_split_10pre_10suf_mean.pt \
     --wandb_project "$WANDB_PROJECT" \
@@ -181,6 +194,7 @@ echo -e "\n>>> [12/12] NHÓM 4 (Ablation 3): 15 PREFIX + 5 SUFFIX (TẦNG 1, MEA
 torchrun --nproc_per_node="$NUM_GPUS" --master_port="$MASTER_PORT" slq_multilayer.py train \
     --coco_root "$COCO_ROOT" --max_pairs "$MAX_PAIRS" --cache_file "$CACHE_FILE" \
     --batch_size "$BATCH_SIZE" --grad_accum_steps "$GRAD_ACCUM" --workers "$WORKERS" \
+    --attn_implementation "$ATTN_IMPL" \
     --num_queries 20 --num_prefix_queries 15 --inject_layer 1 --layers 24 --head_type mean --lr "$LR" --epochs "$EPOCHS" \
     --out slq_exp4c_split_15pre_5suf_mean.pt \
     --wandb_project "$WANDB_PROJECT" \

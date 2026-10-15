@@ -271,8 +271,8 @@ class SLQMultiLayerEncoder(nn.Module):
 
         self.mllm = None
         last_err = None
-        for low_cpu in [True, False]:
-            for attn in attn_candidates:
+        for attn in attn_candidates:
+            for low_cpu in [True, False]:
                 kwargs = {
                     "torch_dtype": dtype,
                     "low_cpu_mem_usage": low_cpu,
@@ -291,6 +291,12 @@ class SLQMultiLayerEncoder(nn.Module):
 
         if self.mllm is None:
             raise RuntimeError(f"Không thể nạp mô hình {MODEL_ID}: {last_err}")
+
+        active_attn = getattr(getattr(self.mllm, "config", None), "_attn_implementation", "unknown")
+        if attn_implementation is not None and active_attn != attn_implementation:
+            print(f"⚠️ [WARNING] Requested attn_implementation='{attn_implementation}', but active backend is '{active_attn}' (fallback applied: {last_err}).")
+        else:
+            print(f"✅ Backbone loaded successfully with Attention Backend: {active_attn}")
 
         self.tok = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, use_fast=False)
         self.tok.padding_side = "left"
@@ -1170,7 +1176,7 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=128, help="Batch size trên GPU (khuyến nghị 128 trên A100)")
     ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
-    ap.add_argument("--attn_implementation", default="eager", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định eager để tương thích InternVL)")
+    ap.add_argument("--attn_implementation", default="flash_attention_2", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định flash_attention_2)")
     ap.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float32"], help="Data type cho weights và forward: 'auto' (tự động bf16 trên Ampere/Hopper GPU), 'bfloat16', 'float32'")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
