@@ -14,7 +14,7 @@ set -e
 
 COCO_ROOT=${1:-"./data/coco2017"}
 CACHE_FILE=${2:-"coco_train2017_vit_cache.pt"}
-ATTN_IMPL=${3:-${ATTN_IMPL:-"flash_attention_2"}}
+ATTN_IMPL=${3:-${ATTN_IMPL:-"eager"}}
 NUM_GPUS=${NUM_GPUS:-4}
 MASTER_PORT=${MASTER_PORT:-29599}
 

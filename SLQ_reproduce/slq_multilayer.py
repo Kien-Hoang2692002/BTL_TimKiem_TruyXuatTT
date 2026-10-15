@@ -1202,7 +1202,7 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=128, help="Batch size trên GPU (khuyến nghị 128 trên A100)")
     ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
-    ap.add_argument("--attn_implementation", default="flash_attention_2", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định flash_attention_2)")
+    ap.add_argument("--attn_implementation", default="eager", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định eager để tương thích chuẩn với left-padding và layer hooks)")
     ap.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float32"], help="Data type cho weights và forward: 'auto' (tự động bf16 trên Ampere/Hopper GPU), 'bfloat16', 'float32'")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")

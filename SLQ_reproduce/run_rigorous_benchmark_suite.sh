@@ -44,7 +44,7 @@ LR=5e-4
 WORKERS=6
 MASTER_PORT=${MASTER_PORT:-29505}
 WANDB_PROJECT=${3:-${WANDB_PROJECT:-"slq-benchmark-suite"}}
-ATTN_IMPL=${ATTN_IMPL:-"flash_attention_2"}
+ATTN_IMPL=${ATTN_IMPL:-"eager"}
 
 echo "=================================================================="
 echo "    BỘ THỰC NGHIỆM ĐỒNG NHẤT CHUẨN HỌC THUẬT (12 RUNS BF16)"
