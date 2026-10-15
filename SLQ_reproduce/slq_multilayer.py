@@ -776,7 +776,7 @@ def train(args):
         rank, local_rank, world_size = 0, 0, 1
         target_device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    torch.manual_seed(args.seed)
+    torch.manual_seed(args.seed + rank)
     layers = [int(x.strip()) for x in args.layers.split(",")]
     model = SLQMultiLayerEncoder(
         num_queries=args.num_queries,
