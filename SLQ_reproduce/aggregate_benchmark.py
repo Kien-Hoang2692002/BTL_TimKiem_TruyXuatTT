@@ -86,11 +86,13 @@ def main():
     lines.append("# BÁO CÁO TỔNG HỢP KẾT QUẢ THỰC NGHIỆM ĐỒNG NHẤT (BF16)")
     lines.append(f"Dự án WandB: `{args.project}` | Phần cứng: 4x NVIDIA A100 SXM4 80GB (bfloat16, Batch 256, 5 epochs)\n")
 
-    # Nhóm 1: Baseline
-    lines.append("## 1. Mốc chuẩn SLQ Gốc & Reproduce")
+    # Nhóm 1: Baseline & Đối chứng
+    lines.append("## 1. Mốc chuẩn SLQ Gốc & Đối chứng")
     rows1 = [
         ["SLQ Gốc (Bài báo công bố)", "19.7K", "—", "—", "61.20%", "84.90%", "48.50%", "84.20%", "74.80%"],
         get_row("exp1_baseline_l1_mean", "exp1_baseline_l1_mean (Reproduce L1 Mean)"),
+        get_row("exp0a_backbone_last_token_zeroshot", "exp0a_backbone_last_token_zeroshot (Mốc sàn Zero-shot)"),
+        get_row("exp0b_backbone_last_token_linear", "exp0b_backbone_last_token_linear (Table 5 Linear Head)"),
     ]
     lines.append(format_table(headers, rows1) + "\n")
 
@@ -131,8 +133,7 @@ def main():
     # Nhóm 5: Champion Runs
     lines.append("## 5. Các mô hình phối hợp Đỉnh cao (Synergy Champions)")
     rows5 = [
-        get_row("exp_lqi18_last4_residual", "exp_lqi18_last4_residual"),
-        get_row("exp_hybrid_5pre_15suf_lqi18_last4_residual", "exp_hybrid_5pre_15suf_lqi18_last4_residual (Kỷ lục 62.66%)"),
+        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion_lqi12_5pre_15suf_last4_residual (Grand Champion)"),
     ]
     lines.append(format_table(headers, rows5) + "\n")
 
