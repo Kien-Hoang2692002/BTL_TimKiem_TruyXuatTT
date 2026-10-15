@@ -240,9 +240,12 @@ class SLQMultiLayerEncoder(nn.Module):
     def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none", num_prefix_queries=0):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if dtype is None:
-            native_bf16 = device == "cuda" and torch.cuda.is_bf16_supported()
+        if dtype is None or dtype == "auto":
+            dev_str = str(device).lower()
+            native_bf16 = dev_str.startswith("cuda") and torch.cuda.is_bf16_supported()
             dtype = torch.bfloat16 if native_bf16 else torch.float32
+        elif isinstance(dtype, str):
+            dtype = torch.bfloat16 if "bf16" in dtype or "bfloat16" in dtype else torch.float32
         self.inject_layer = max(1, int(inject_layer))
         self.query_split = (query_split or "none").lower()
         self.num_prefix_queries = max(0, int(num_prefix_queries))
@@ -735,6 +738,7 @@ def train(args):
         head_type=args.head_type,
         pooling=getattr(args, "pooling", "mean"),
         device=target_device,
+        dtype=getattr(args, "dtype", "auto"),
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
@@ -1036,6 +1040,7 @@ def evaluate(args):
         layers=layers,
         head_type=args.head_type,
         pooling=getattr(args, "pooling", "mean"),
+        dtype=getattr(args, "dtype", "auto"),
         attn_implementation=args.attn_implementation,
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
@@ -1081,6 +1086,7 @@ if __name__ == "__main__":
     ap.add_argument("--grad_accum_steps", type=int, default=8, help="Số bước tích lũy gradient (128 x 8 = 1024 như bài báo gốc)")
     ap.add_argument("--workers", type=int, default=8, help="Số workers DataLoader")
     ap.add_argument("--attn_implementation", default="eager", choices=["eager", "sdpa", "flash_attention_2"], help="Attention backend (mặc định eager để tương thích InternVL)")
+    ap.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float32"], help="Data type cho weights và forward: 'auto' (tự động bf16 trên Ampere/Hopper GPU), 'bfloat16', 'float32'")
     # train
     ap.add_argument("--coco_root", default="/kaggle/input/coco-2017-dataset/coco2017")
     ap.add_argument("--max_pairs", type=int, default=20000, help="0 = toàn bộ ~118k ảnh COCO")
