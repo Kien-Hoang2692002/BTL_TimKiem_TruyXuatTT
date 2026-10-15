@@ -106,13 +106,14 @@ def main():
     ]
     lines.append(format_table(headers, rows2) + "\n")
 
-    # Nhóm 3: Ablation Study 2 - Head đa tầng
-    lines.append("## 3. Ablation Study 2: Cơ chế tổng hợp đa tầng (Multi-layer Head)")
-    lines.append("*Cố định: Tiêm tại Tầng 1, Trích xuất 4 tầng cuối [21, 22, 23, 24]*\n")
+    # Nhóm 3: Ablation Study 2 - Chiến lược trích xuất tầng & Head
+    lines.append("## 3. Ablation Study 2: Chiến lược trích xuất tầng & Projector Head")
+    lines.append("*Cố định: Tiêm tại Tầng 1 (0% depth)*\n")
     rows3 = [
-        get_row("exp3a_last4_mean", "exp3a_last4_mean (Mean Pooling)"),
-        get_row("exp3b_last4_mlp", "exp3b_last4_mlp (Multi-Layer MLP)"),
-        get_row("exp3c_last4_residual", "exp3c_last4_residual (Residual Refinement Head)"),
+        get_row("exp3a_last2_mean", "2 tầng cuối [23, 24] + Mean Pooling"),
+        get_row("exp3b_last4_mean", "4 tầng cuối [21, 22, 23, 24] + Mean Pooling"),
+        get_row("exp3c_last4_residual", "4 tầng cuối [21, 22, 23, 24] + Residual Refinement"),
+        get_row("exp3d_spaced4_residual", "4 tầng cách nhau [12, 16, 20, 24] + Residual Refinement"),
     ]
     lines.append(format_table(headers, rows3) + "\n")
 
@@ -144,3 +145,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
