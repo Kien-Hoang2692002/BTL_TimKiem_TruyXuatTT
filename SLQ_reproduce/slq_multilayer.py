@@ -349,12 +349,27 @@ class SLQMultiLayerEncoder(nn.Module):
             self.head = LearnableLayerWeighting(num_layers=K).to(device)
         elif self.head_type in ("cross_attn", "attention"):
             self.head = CrossAttentionLayerPooling(dim=D).to(device)
-        else:
-            raise ValueError(f"head_type không hợp lệ: {head_type}. Chọn 'mean', 'mlp', 'residual', 'linear', 'weighted', 'cross_attn', hoặc 'none'")
+        # Nếu dùng Late Injection (inject_layer > 1), đăng ký forward pre-hook cố định trên backbone layer
+        self._inject_hook_handle = None
+        if self.num_queries > 0 and self.inject_layer > 1:
+            target_layer_idx = min(len(self.backbone.layers) - 1, max(0, self.inject_layer - 1))
+
+            def inject_hook(module, args):
+                h = args[0]
+                B = h.size(0)
+                if self.query_split == "layer_split":
+                    half_q = self.num_pool_queries
+                    q_fresh = self.query_norm_late(self.meta_queries_late.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    h_new = torch.cat([h[:, :-half_q], q_fresh], dim=1)
+                else:
+                    q_fresh = self.query_norm(self.meta_queries.to(device=h.device, dtype=h.dtype)).unsqueeze(0).expand(B, -1, -1)
+                    h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
+                return (h_new,) + args[1:]
+
+            self._inject_hook_handle = self.backbone.layers[target_layer_idx].register_forward_pre_hook(inject_hook)
 
     def _run(self, embeds, mask):
         B = embeds.size(0)
-        hook_handle = None
 
         if self.num_queries == 0 or self.num_pool_queries == 0:
             pass
@@ -365,16 +380,6 @@ class SLQMultiLayerEncoder(nn.Module):
             q_late_dummy = torch.zeros(B, half_q, self.hidden_dim, dtype=self.dtype, device=embeds.device)
             embeds = torch.cat([embeds, q_early, q_late_dummy], dim=1)
             mask = torch.cat([mask, mask.new_ones(B, half_q * 2)], dim=1)
-
-            q_late_fresh = self.query_norm_late(self.meta_queries_late.to(self.dtype)).unsqueeze(0).expand(B, -1, -1)
-
-            def inject_hook(module, args):
-                h = args[0]
-                h_new = torch.cat([h[:, :-half_q], q_late_fresh], dim=1)
-                return (h_new,) + args[1:]
-
-            target_layer_idx = min(len(self.backbone.layers) - 1, max(0, self.inject_layer - 1))
-            hook_handle = self.backbone.layers[target_layer_idx].register_forward_pre_hook(inject_hook)
 
         elif self.query_split in ("seq_split", "prefix_suffix"):
             # 10 queries ở đầu chuỗi (prefix) + 10 queries ở cuối chuỗi (suffix)
@@ -394,27 +399,13 @@ class SLQMultiLayerEncoder(nn.Module):
                 embeds = torch.cat([embeds, q_dummy], dim=1)
                 mask = torch.cat([mask, mask.new_ones(B, self.num_queries)], dim=1)
 
-                q_fresh = self.query_norm(self.meta_queries.to(self.dtype)).unsqueeze(0).expand(B, -1, -1)
-
-                def inject_hook(module, args):
-                    h = args[0]
-                    h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
-                    return (h_new,) + args[1:]
-
-                target_layer_idx = min(len(self.backbone.layers) - 1, max(0, self.inject_layer - 1))
-                hook_handle = self.backbone.layers[target_layer_idx].register_forward_pre_hook(inject_hook)
-
         # Trích xuất hidden states từ toàn bộ các layer
-        try:
-            outputs = self.backbone(
-                inputs_embeds=embeds,
-                attention_mask=mask,
-                use_cache=False,
-                output_hidden_states=True
-            )
-        finally:
-            if hook_handle is not None:
-                hook_handle.remove()
+        outputs = self.backbone(
+            inputs_embeds=embeds,
+            attention_mask=mask,
+            use_cache=False,
+            output_hidden_states=True
+        )
 
         all_hidden_states = outputs.hidden_states  # Tuple gồm (embed_out, layer_0, ..., layer_last)
 
