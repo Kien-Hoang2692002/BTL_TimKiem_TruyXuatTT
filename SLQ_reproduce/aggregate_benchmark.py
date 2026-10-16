@@ -145,7 +145,8 @@ def main():
     # Nhóm 6: Champion Runs
     lines.append("## 6. Các mô hình phối hợp Đỉnh cao (Synergy Champions)")
     rows6 = [
-        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion_lqi12_5pre_15suf_last4_residual (Grand Champion)"),
+        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion (5 Pre + 15 Suf Tĩnh + Residual Head: 68.30%)"),
+        get_row("exp_ultimate_champion_lqi12_5pre_adaptive_mlp15suf_last4_residual", "exp_ultimate_champion (5 Pre + 15 Suf Adaptive MLP + Residual Head)"),
     ]
     lines.append(format_table(headers, rows6) + "\n")
 

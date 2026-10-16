@@ -440,7 +440,21 @@ class SLQMultiLayerEncoder(nn.Module):
         self.moe_query_pool = None
 
         half_q = max(1, num_queries // 2)
-        if self.adaptive_mode == "mlp":
+        if num_queries == 0:
+            self.num_pool_queries = 0
+            self.num_suffix_queries = 0
+        elif self.num_prefix_queries > 0:
+            # Chế độ Prefix - Suffix (Prefix ở đầu chuỗi L1, Suffix ở cuối chuỗi tại L1 hoặc inject_layer)
+            self.num_suffix_queries = max(1, num_queries - self.num_prefix_queries)
+            self.meta_queries_prefix = nn.Parameter(torch.randn(self.num_prefix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
+            if self.adaptive_mode == "mlp":
+                self.mlp_query_gen = MLPQueryGenerator(in_dim=D, num_queries=self.num_suffix_queries).to(device=device, dtype=dtype)
+            else:
+                self.meta_queries_suffix = nn.Parameter(torch.randn(self.num_suffix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
+            if self.inject_layer > 1:
+                self.query_norm_late = nn.LayerNorm(D, device=device, dtype=dtype)
+            self.num_pool_queries = self.num_suffix_queries
+        elif self.adaptive_mode == "mlp":
             self.mlp_query_gen = MLPQueryGenerator(in_dim=D, num_queries=num_queries).to(device=device, dtype=dtype)
             self.num_pool_queries = num_queries
             self.num_suffix_queries = 0
@@ -451,17 +465,6 @@ class SLQMultiLayerEncoder(nn.Module):
             ).to(device=device, dtype=dtype)
             self.num_pool_queries = num_queries
             self.num_suffix_queries = 0
-        elif num_queries == 0:
-            self.num_pool_queries = 0
-            self.num_suffix_queries = 0
-        elif self.num_prefix_queries > 0:
-            # Chế độ Prefix - Suffix (Prefix ở đầu chuỗi L1, Suffix ở cuối chuỗi tại L1 hoặc inject_layer)
-            self.num_suffix_queries = max(1, num_queries - self.num_prefix_queries)
-            self.meta_queries_prefix = nn.Parameter(torch.randn(self.num_prefix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
-            self.meta_queries_suffix = nn.Parameter(torch.randn(self.num_suffix_queries, D, device=device, dtype=dtype) / math.sqrt(D))
-            if self.inject_layer > 1:
-                self.query_norm_late = nn.LayerNorm(D, device=device, dtype=dtype)
-            self.num_pool_queries = self.num_suffix_queries
         elif self.query_split == "layer_split":
             # 10 queries ở Layer 1 + 10 queries ở inject_layer (Layer 18). Chỉ pool 10 queries cuối.
             self.num_suffix_queries = half_q
@@ -513,7 +516,20 @@ class SLQMultiLayerEncoder(nn.Module):
             def inject_hook(module, args):
                 h = args[0]
                 B = h.size(0)
-                if self.adaptive_mode == "mlp":
+                if self.num_prefix_queries > 0:
+                    # Thay thế num_suffix_queries cuối bằng q_suffix tươi mới
+                    if self.adaptive_mode == "mlp":
+                        u_last = h[:, -self.num_suffix_queries - 1, :].to(dtype=self.dtype)
+                        q_fresh = self.mlp_query_gen(u_last).to(device=h.device, dtype=h.dtype)
+                    else:
+                        norm_mod = self.query_norm_late
+                        if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
+                            norm_mod = norm_mod.to(device=h.device, dtype=h.dtype)
+                        q_input = self.meta_queries_suffix.to(device=h.device, dtype=h.dtype)
+                        q_normed = norm_mod(q_input) if norm_mod is not None else q_input
+                        q_fresh = q_normed.unsqueeze(0).expand(B, -1, -1)
+                    h_new = torch.cat([h[:, :-self.num_suffix_queries], q_fresh], dim=1)
+                elif self.adaptive_mode == "mlp":
                     # Lấy Last Token L11 của chuỗi input thực sự (ngay trước các dummy queries)
                     u_last = h[:, -self.num_queries - 1, :].to(dtype=self.dtype)
                     q_fresh = self.mlp_query_gen(u_last).to(device=h.device, dtype=h.dtype)
@@ -523,15 +539,6 @@ class SLQMultiLayerEncoder(nn.Module):
                     u_last = h[:, -self.num_queries - 1, :].to(dtype=self.dtype)
                     q_fresh = self.moe_query_pool(u_last).to(device=h.device, dtype=h.dtype)
                     h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
-                elif self.num_prefix_queries > 0:
-                    # Thay thế num_suffix_queries cuối bằng q_suffix tươi mới
-                    norm_mod = self.query_norm_late
-                    if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
-                        norm_mod = norm_mod.to(device=h.device, dtype=h.dtype)
-                    q_input = self.meta_queries_suffix.to(device=h.device, dtype=h.dtype)
-                    q_normed = norm_mod(q_input) if norm_mod is not None else q_input
-                    q_fresh = q_normed.unsqueeze(0).expand(B, -1, -1)
-                    h_new = torch.cat([h[:, :-self.num_suffix_queries], q_fresh], dim=1)
                 elif self.query_split == "layer_split":
                     half_q = self.num_pool_queries
                     norm_mod = self.query_norm_late
@@ -670,13 +677,15 @@ class SLQMultiLayerEncoder(nn.Module):
 
     def get_trainable_params(self):
         params = []
+        if self.meta_queries_prefix is not None:
+            params.append(self.meta_queries_prefix)
         if self.adaptive_mode == "mlp" and self.mlp_query_gen is not None:
             params.extend(list(self.mlp_query_gen.parameters()))
         elif self.adaptive_mode == "moe_pool" and self.moe_query_pool is not None:
             params.extend(list(self.moe_query_pool.parameters()))
         else:
             for p in [self.meta_queries, self.meta_queries_early, self.meta_queries_late,
-                      self.meta_queries_prefix, self.meta_queries_suffix]:
+                      self.meta_queries_suffix]:
                 if p is not None:
                     params.append(p)
             for norm in [self.query_norm, self.query_norm_late]:
