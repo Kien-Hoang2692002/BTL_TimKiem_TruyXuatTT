@@ -74,3 +74,4 @@ echo -e "\n=================================================================="
 echo "    HOÀN TẤT ULTIMATE GRAND CHAMPION RUN! ĐANG TỰ ĐỘNG CẬP NHẬT BÁO CÁO..."
 echo "=================================================================="
 python aggregate_benchmark.py --project "$WANDB_PROJECT"
+

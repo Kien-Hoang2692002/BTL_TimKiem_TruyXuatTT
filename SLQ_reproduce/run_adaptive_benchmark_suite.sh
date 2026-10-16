@@ -141,3 +141,4 @@ echo -e "\n=================================================================="
 echo "    HOÀN TẤT BỘ THỰC NGHIỆM ADAPTIVE! ĐANG TỰ ĐỘNG TỔNG HỢP BÁO CÁO..."
 echo "=================================================================="
 python aggregate_benchmark.py --project "$WANDB_PROJECT"
+

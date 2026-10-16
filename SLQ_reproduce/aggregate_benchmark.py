@@ -83,72 +83,91 @@ def main():
     headers = ["Phương pháp / Cấu hình", "Params", "Time", "VRAM", "COCO I2T@1", "COCO I2T@5", "COCO T2I@1", "Flickr I2T@1", "Flickr T2I@1"]
 
     lines = []
-    lines.append("# BÁO CÁO TỔNG HỢP KẾT QUẢ THỰC NGHIỆM ĐỒNG NHẤT (BF16)")
+    lines.append("# BÁO CÁO KHOA HỌC: CẢI TIẾN TRUY VẤN TIỀM ẨN THÍCH ỨNG ĐA TẦNG CHO MLLM RETRIEVAL")
     lines.append(f"Dự án WandB: `{args.project}` | Phần cứng: 4x NVIDIA A100 SXM4 80GB (bfloat16, Batch 256, 5 epochs)\n")
+    lines.append("> [!NOTE]\n> **Lưu ý về Tốc độ (Wall-clock Time):** Các thực nghiệm ở Mục 1 đến 4 chạy trên GPU sạch (100% idle). Các thực nghiệm Adaptive và Ultimate ở Mục 5, 6 chạy trong phiên sau bị tranh chấp tài nguyên với tiến trình GPU khác trên server, nên thời gian thực thi bị kéo dài hơn. Vì vậy, chỉ nên so sánh thời gian tương đối trong cùng một phiên đo đạc.\n")
 
-    # Nhóm 1: Baseline & Đối chứng
-    lines.append("## 1. Mốc chuẩn SLQ Gốc & Đối chứng")
+    lines.append("## PHẦN I: BÁO CÁO THỰC NGHIỆM CHÍNH THỨC (OFFICIAL BENCHMARK REPORT)\n")
+
+    # 1. Tái lập methods gốc & đối chứng
+    lines.append("### 1. Tái lập Phương pháp Gốc & Các Mốc Đối chứng Cơ sở")
+    lines.append("*Mục tiêu: Thiết lập mốc sàn tự nhiên của LLM tiền huấn luyện và mốc đối chứng với phương pháp học Linear Head truyền thống.*\n")
     rows1 = [
+        get_row("exp0a_backbone_last_token_zeroshot", "Backbone Zero-shot (Last Token)"),
+        get_row("exp0b_backbone_last_token_linear", "Backbone + Linear Head (Table 5 Paper)"),
         ["SLQ Gốc (Bài báo công bố)", "19.7K", "—", "—", "61.20%", "84.90%", "48.50%", "84.20%", "74.80%"],
-        get_row("exp1_baseline_l1_mean", "exp1_baseline_l1_mean (Reproduce L1 Mean)"),
-        get_row("exp0a_backbone_last_token_zeroshot", "exp0a_backbone_last_token_zeroshot (Mốc sàn Zero-shot)"),
-        get_row("exp0b_backbone_last_token_linear", "exp0b_backbone_last_token_linear (Table 5 Linear Head)"),
+        get_row("exp1_baseline_l1_mean", "SLQ Tái lập (Baseline: 20 Queries L1, L24 Mean)"),
     ]
     lines.append(format_table(headers, rows1) + "\n")
 
-    # Nhóm 2: Ablation Study 1 - Vị trí tiêm (Injection Depth)
-    lines.append("## 2. Ablation Study 1: Vị trí tiêm Query (Injection Depth)")
-    lines.append("*Cố định: 20 Queries, Layer 24 Mean Pooling (19.7K params)*\n")
+    # 2. Study về prefix prompt
+    lines.append("### 2. Nghiên cứu Phân bố Không gian Query (Prefix-Steering Queries)")
+    lines.append("*Cố định: Tiêm tại Tầng 1, Layer 24 Mean Pooling. Khảo sát việc phân tách query thành Prefix (đầu chuỗi) và Suffix (đuôi chuỗi).*\n")
     rows2 = [
-        get_row("exp1_baseline_l1_mean", "Tầng 1 (SLQ gốc - 0% depth)"),
-        get_row("exp2a_lqi8_l24_mean", "Tầng 8 (33.3% depth)"),
-        get_row("exp2b_lqi12_l24_mean", "Tầng 12 (50.0% depth)"),
-        get_row("exp2c_lqi16_l24_mean", "Tầng 16 (66.7% depth)"),
-        get_row("exp2d_lqi20_l24_mean", "Tầng 20 (83.3% depth)"),
-    ]
-    lines.append(format_table(headers, rows2) + "\n")
-
-    # Nhóm 3: Ablation Study 2 - Chiến lược trích xuất tầng & Head
-    lines.append("## 3. Ablation Study 2: Chiến lược trích xuất tầng & Projector Head")
-    lines.append("*Cố định: Tiêm tại Tầng 1 (0% depth)*\n")
-    rows3 = [
-        get_row("exp3a_last2_mean", "2 tầng cuối [23, 24] + Mean Pooling"),
-        get_row("exp3b_last4_mean", "4 tầng cuối [21, 22, 23, 24] + Mean Pooling"),
-        get_row("exp3c_last4_residual", "4 tầng cuối [21, 22, 23, 24] + Residual Refinement"),
-        get_row("exp3d_spaced4_residual", "4 tầng cách nhau [12, 16, 20, 24] + Residual Refinement"),
-    ]
-    lines.append(format_table(headers, rows3) + "\n")
-
-    # Nhóm 4: Ablation Study 3 - Tỷ lệ phân bổ Prefix vs Suffix
-    lines.append("## 4. Ablation Study 3: Phân bố không gian Query (Prefix - Suffix Ratio)")
-    lines.append("*Cố định: Tiêm tại Tầng 1, Layer 24 Mean Pooling*\n")
-    rows4 = [
         get_row("exp1_baseline_l1_mean", "0 Prefix + 20 Suffix (SLQ gốc)"),
-        get_row("exp4a_split_5pre_15suf_mean", "5 Prefix + 15 Suffix"),
+        get_row("exp4a_split_5pre_15suf_mean", "5 Prefix + 15 Suffix (Best Prefix Steering) ⭐"),
         get_row("exp4b_split_10pre_10suf_mean", "10 Prefix + 10 Suffix"),
         get_row("exp4c_split_15pre_5suf_mean", "15 Prefix + 5 Suffix"),
     ]
+    lines.append(format_table(headers, rows2) + "\n")
+
+    # 3. Study về vị trí chèn prompt
+    lines.append("### 3. Nghiên cứu Vị trí Tiêm Query: Tiêm Trễ Tầng Giữa (Late Query Injection - LQI)")
+    lines.append("*Cố định: 20 Queries, Layer 24 Mean Pooling (19.7K params). Khảo sát độ sâu lý tưởng để bắt đầu tương tác cross-attention.*\n")
+    rows3 = [
+        get_row("exp1_baseline_l1_mean", "Tiêm Tầng 1 (0.0% Depth - SLQ gốc)"),
+        get_row("exp2a_lqi8_l24_mean", "Tiêm Tầng 8 (33.3% Depth)"),
+        get_row("exp2b_lqi12_l24_mean", "Tiêm Tầng 12 (50.0% Depth - LQI-12 Sweet Spot) ⭐"),
+        get_row("exp2c_lqi16_l24_mean", "Tiêm Tầng 16 (66.7% Depth)"),
+        get_row("exp2d_lqi20_l24_mean", "Tiêm Tầng 20 (83.3% Depth)"),
+    ]
+    lines.append(format_table(headers, rows3) + "\n")
+
+    # 4. Study về nên lấy feature từ layer nào và tổng hợp thế nào
+    lines.append("### 4. Nghiên cứu Trích xuất Đa tầng & Khối Tinh chỉnh Residual (Multi-Layer Residual Refinement)")
+    lines.append("*Cố định: Tiêm tại Tầng 1. Khảo sát các chiến lược trích xuất tầng sâu và kiến trúc Projector Head để lọc nhiễu autoregressive.*\n")
+    rows4 = [
+        get_row("exp3a_last2_mean", "2 tầng cuối [23, 24] + Mean Pooling"),
+        get_row("exp3b_last4_mean", "4 tầng cuối [21, 22, 23, 24] + Mean Pooling"),
+        get_row("exp3d_spaced4_residual", "4 tầng cách nhau [12, 16, 20, 24] + Residual Head"),
+        get_row("exp3c_last4_residual", "4 tầng cuối [21, 22, 23, 24] + Residual Head (MR-4) ⭐"),
+    ]
     lines.append(format_table(headers, rows4) + "\n")
 
-    # Nhóm 5: Ablation Study 4 - Instance-Adaptive Queries tại Tầng 12
-    lines.append("## 5. Ablation Study 4: Instance-Adaptive Queries (Tầng 12)")
-    lines.append("*So sánh với mốc chuẩn Static Query tại Tầng 12 (exp2b: 63.40%)*\n")
+    # 5. Study về adapt query prompt
+    lines.append("### 5. Nghiên cứu Thích ứng hóa Query theo Đầu vào (Instance-Adaptive Query Generation)")
+    lines.append("*Cố định: Tiêm tại Tầng 12, Layer 24 Mean Pooling. Khảo sát khả năng sinh query động từ Last Token của Tầng 11.*\n")
     rows5 = [
-        get_row("exp2b_lqi12_l24_mean", "LQI 12 Tĩnh (Static Baseline)"),
-        get_row("exp_adaptive_mlp_lqi12_mean", "Ý tưởng 1: MLP Generator (20 queries từ L11)"),
-        get_row("exp_adaptive_moe30_lqi12_mean", "Ý tưởng 2a: DeepSeek MoE Pool 30 (5 Shared + 15 Routed)"),
-        get_row("exp_adaptive_moe60_lqi12_mean", "Ý tưởng 2b: DeepSeek MoE Pool 60 (5 Shared + 15 Routed)"),
-        get_row("exp_adaptive_moe30_lqi12_last4_residual", "Ý tưởng 2 + 4-Layer Residual Refinement Head"),
+        get_row("exp2b_lqi12_l24_mean", "LQI-12 Tĩnh (Static Baseline)"),
+        get_row("exp_adaptive_mlp_lqi12_mean", "LQI-12 Thích ứng (Instance-Adaptive MLP Generator - IAQ-12) ⭐"),
     ]
     lines.append(format_table(headers, rows5) + "\n")
 
-    # Nhóm 6: Champion Runs
-    lines.append("## 6. Các mô hình phối hợp Đỉnh cao (Synergy Champions)")
+    # 6. Bảng kết quả tổng hợp
+    lines.append("### 6. Bảng Tổng Hợp So Sánh Toàn Diện & Mô Hình Đề Xuất (Main Benchmark)")
+    lines.append("*Tổng hợp các mốc đối chứng, phiên bản tốt nhất của từng trục cải tiến đơn lẻ, và Mô hình Đề xuất Hoàn thiện: **AdaSLQ**.*\n")
     rows6 = [
-        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion (5 Pre + 15 Suf Tĩnh + Residual Head: 68.30%)"),
-        get_row("exp_ultimate_champion_lqi12_5pre_adaptive_mlp15suf_last4_residual", "exp_ultimate_champion (5 Pre + 15 Suf Adaptive MLP + Residual Head)"),
+        get_row("exp0b_backbone_last_token_linear", "Backbone + Linear Head (Table 5 Paper)"),
+        ["SLQ Gốc (Bài báo công bố)", "19.7K", "—", "—", "61.20%", "84.90%", "48.50%", "84.20%", "74.80%"],
+        get_row("exp1_baseline_l1_mean", "SLQ Tái lập (Baseline)"),
+        get_row("exp4a_split_5pre_15suf_mean", "+ Prefix Steering (5 Pre + 15 Suf)"),
+        get_row("exp2b_lqi12_l24_mean", "+ Late Query Injection (LQI-12)"),
+        get_row("exp3c_last4_residual", "+ Multi-Layer Residual Refinement (MR-4)"),
+        get_row("exp_adaptive_mlp_lqi12_mean", "+ Instance-Adaptive Query Generator (IAQ-12)"),
+        get_row("exp_ultimate_champion_lqi12_5pre_adaptive_mlp15suf_last4_residual", "AdaSLQ (Mô hình Đề xuất Hoàn thiện: 5-Pre + Adaptive-Suf + MR-4) 👑"),
     ]
     lines.append(format_table(headers, rows6) + "\n")
+
+    # PHẦN II: PHỤ LỤC THỰC NGHIỆM MỞ RỘNG
+    lines.append("\n---\n## PHẦN II: PHỤ LỤC THỰC NGHIỆM KỸ THUẬT (TECHNICAL APPENDIX)\n")
+    lines.append("### A. Khảo sát Mô hình Phối hợp Trung gian & Ngân hàng Query MoE")
+    lines.append("*Lưu vết các thí nghiệm thăm dò kiến trúc khác (Grand V1 tĩnh và DeepSeek MoE Query Pool).*\n")
+    rows_app = [
+        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "Grand Champion V1 (5 Pre + 15 Suf Tĩnh + Residual Head: 68.30%)"),
+        get_row("exp_adaptive_moe30_lqi12_mean", "Thăm dò: DeepSeek MoE Pool 30 (5 Shared + 15 Routed)"),
+        get_row("exp_adaptive_moe60_lqi12_mean", "Thăm dò: DeepSeek MoE Pool 60 (5 Shared + 15 Routed)"),
+    ]
+    lines.append(format_table(headers, rows_app) + "\n")
 
     report_content = "\n".join(lines)
     with open(args.out, "w", encoding="utf-8") as f:
