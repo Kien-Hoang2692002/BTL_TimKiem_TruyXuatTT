@@ -130,12 +130,24 @@ def main():
     ]
     lines.append(format_table(headers, rows4) + "\n")
 
-    # Nhóm 5: Champion Runs
-    lines.append("## 5. Các mô hình phối hợp Đỉnh cao (Synergy Champions)")
+    # Nhóm 5: Ablation Study 4 - Instance-Adaptive Queries tại Tầng 12
+    lines.append("## 5. Ablation Study 4: Instance-Adaptive Queries (Tầng 12)")
+    lines.append("*So sánh với mốc chuẩn Static Query tại Tầng 12 (exp2b: 63.40%)*\n")
     rows5 = [
-        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion_lqi12_5pre_15suf_last4_residual (Grand Champion)"),
+        get_row("exp2b_lqi12_l24_mean", "LQI 12 Tĩnh (Static Baseline)"),
+        get_row("exp_adaptive_mlp_lqi12_mean", "Ý tưởng 1: MLP Generator (20 queries từ L11)"),
+        get_row("exp_adaptive_moe30_lqi12_mean", "Ý tưởng 2a: DeepSeek MoE Pool 30 (5 Shared + 15 Routed)"),
+        get_row("exp_adaptive_moe60_lqi12_mean", "Ý tưởng 2b: DeepSeek MoE Pool 60 (5 Shared + 15 Routed)"),
+        get_row("exp_adaptive_moe30_lqi12_last4_residual", "Ý tưởng 2 + 4-Layer Residual Refinement Head"),
     ]
     lines.append(format_table(headers, rows5) + "\n")
+
+    # Nhóm 6: Champion Runs
+    lines.append("## 6. Các mô hình phối hợp Đỉnh cao (Synergy Champions)")
+    rows6 = [
+        get_row("exp_grand_champion_lqi12_5pre_15suf_last4_residual", "exp_grand_champion_lqi12_5pre_15suf_last4_residual (Grand Champion)"),
+    ]
+    lines.append(format_table(headers, rows6) + "\n")
 
     report_content = "\n".join(lines)
     with open(args.out, "w", encoding="utf-8") as f:

@@ -109,3 +109,4 @@ echo -e "\n=================================================================="
 echo "    HOÀN TẤT TOÀN BỘ 3 THỰC NGHIỆM! ĐANG TỰ ĐỘNG TỔNG HỢP BÁO CÁO..."
 echo "=================================================================="
 python aggregate_benchmark.py --project "$WANDB_PROJECT"
+

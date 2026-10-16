@@ -227,6 +227,108 @@ class ResidualRefinementHead(nn.Module):
         return h_last + self.alpha * delta
 
 
+class MLPQueryGenerator(nn.Module):
+    """
+    Ý tưởng 1: Sinh bộ k query prompts thích ứng trực tiếp từ Last Token của Tầng L11.
+    Formula: Q_adaptive = Q_base + alpha * MLP(u_last)
+    u_last: [B, D] (Last token sau Tầng 11)
+    MLP: D -> mid_dim -> k * D
+    Q_base: [k, D] parameter tĩnh
+    alpha: Learnable scalar, khởi tạo = 0.0 (Zero-Init Residual)
+    """
+    def __init__(self, in_dim=2048, num_queries=20, mid_dim=512):
+        super().__init__()
+        self.num_queries = num_queries
+        self.in_dim = in_dim
+        self.base_queries = nn.Parameter(torch.randn(num_queries, in_dim) / math.sqrt(in_dim))
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, mid_dim),
+            nn.LayerNorm(mid_dim),
+            nn.GELU(),
+            nn.Linear(mid_dim, num_queries * in_dim),
+        )
+        self.alpha = nn.Parameter(torch.zeros(1))
+        self.norm = nn.LayerNorm(in_dim)
+
+    def forward(self, u_last):
+        B = u_last.size(0)
+        delta_q = self.mlp(u_last).view(B, self.num_queries, self.in_dim)
+        q_base = self.base_queries.unsqueeze(0).expand(B, -1, -1)
+        q_out = q_base + self.alpha * delta_q
+        return self.norm(q_out)
+
+
+class DeepSeekSparseQueryPool(nn.Module):
+    """
+    Ý tưởng 2: Ngân hàng Query tiềm năng (Query Pool) với Sparse MoE Router và Loss-Free Load Balancing.
+    - 5 Query cố định (Shared Anchors): nắm giữ tri thức retrieval toàn cục.
+    - 15 Query định tuyến (Routed Queries): chọn Top-15 từ Pool M queries (M=30 hoặc 60) dựa trên Last Token Tầng 11.
+    - Loss-Free Balancing: Cập nhật bias động b để cân bằng tải giữa các queries trong pool mà không cần hàm phạt Aux Loss.
+    """
+    def __init__(self, in_dim=2048, pool_size=30, num_shared=5, num_routed=15, mid_dim=256, balance_gamma=0.01):
+        super().__init__()
+        self.in_dim = in_dim
+        self.pool_size = pool_size
+        self.num_shared = num_shared
+        self.num_routed = num_routed
+        self.balance_gamma = balance_gamma
+
+        # 5 Shared Queries cố định
+        self.shared_queries = nn.Parameter(torch.randn(num_shared, in_dim) / math.sqrt(in_dim))
+
+        # Ngân hàng M queries chuyên gia
+        self.query_pool = nn.Parameter(torch.randn(pool_size, in_dim) / math.sqrt(in_dim))
+
+        # Router MLP tính gating score trên pool M
+        self.router = nn.Sequential(
+            nn.Linear(in_dim, mid_dim),
+            nn.LayerNorm(mid_dim),
+            nn.GELU(),
+            nn.Linear(mid_dim, pool_size),
+        )
+
+        # Dynamic bias cho Loss-Free Load Balancing (không tính gradient)
+        self.register_buffer("balance_bias", torch.zeros(pool_size))
+        self.norm = nn.LayerNorm(in_dim)
+
+    def forward(self, u_last):
+        B = u_last.size(0)
+
+        # 1. Router logits: [B, M]
+        logits = self.router(u_last)
+
+        # 2. Điểm chọn có bias để cân bằng tải (DeepSeek Loss-Free): [B, M]
+        scores_for_select = logits + self.balance_bias.to(dtype=logits.dtype, device=logits.device)
+
+        # 3. Chọn Top-k indices: [B, num_routed]
+        topk_scores, topk_indices = torch.topk(scores_for_select, k=self.num_routed, dim=-1)
+
+        # 4. Cập nhật Loss-Free Balance Bias khi huấn luyện
+        if self.training:
+            with torch.no_grad():
+                counts = torch.bincount(topk_indices.reshape(-1), minlength=self.pool_size).float()
+                total_selections = float(B * self.num_routed)
+                if total_selections > 0:
+                    actual_freq = counts / total_selections
+                    target_freq = float(self.num_routed) / float(self.pool_size)
+                    error = actual_freq - target_freq
+                    self.balance_bias.sub_(self.balance_gamma * error.to(self.balance_bias.device))
+
+        # 5. Tính trọng số Softmax trên logits thuần (không bias để gradient chuẩn): [B, num_routed]
+        raw_topk_logits = torch.gather(logits, dim=-1, index=topk_indices)
+        weights = F.softmax(raw_topk_logits, dim=-1)  # [B, num_routed]
+
+        # 6. Gather các vector từ query_pool và nhân trọng số
+        selected_queries = self.query_pool[topk_indices]  # [B, num_routed, D]
+        routed_queries = (float(self.num_routed) * weights.unsqueeze(-1)) * selected_queries  # [B, num_routed, D]
+
+        # 7. Ghép 5 Shared Queries với 15 Routed Queries
+        shared = self.shared_queries.unsqueeze(0).expand(B, -1, -1)  # [B, num_shared, D]
+        q_out = torch.cat([shared, routed_queries], dim=1)  # [B, num_shared + num_routed, D] = [B, 20, D]
+
+        return self.norm(q_out)
+
+
 if torch.cuda.is_available():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -237,7 +339,7 @@ if torch.cuda.is_available():
 
 # ----------------------------------------------------------------------------- mô hình SLQ Multi-Layer
 class SLQMultiLayerEncoder(nn.Module):
-    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none", num_prefix_queries=0):
+    def __init__(self, num_queries=20, layers=(6, 12, 18, 24), head_type="residual", pooling="mean", device=None, dtype=None, attn_implementation="eager", vit_chunk_size=64, inject_layer=1, query_split="none", num_prefix_queries=0, adaptive_mode="none", moe_pool_size=30, moe_shared_queries=5, moe_routed_queries=15, loss_free_gamma=0.01):
         super().__init__()
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if dtype is None or dtype == "auto":
@@ -252,7 +354,16 @@ class SLQMultiLayerEncoder(nn.Module):
         if self.num_prefix_queries == 0 and self.query_split in ("seq_split", "prefix_suffix"):
             self.num_prefix_queries = max(1, num_queries // 2)
 
-        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} (Prefix: {self.num_prefix_queries}) | InjectLayer: {self.inject_layer} | Split: {self.query_split} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
+        self.adaptive_mode = (adaptive_mode or "none").lower()
+        self.moe_pool_size = int(moe_pool_size)
+        self.moe_shared_queries = int(moe_shared_queries)
+        self.moe_routed_queries = int(moe_routed_queries)
+        self.loss_free_gamma = float(loss_free_gamma)
+
+        if self.adaptive_mode == "moe_pool":
+            num_queries = self.moe_shared_queries + self.moe_routed_queries
+
+        print(f"Device: {device} | Dtype: {dtype} | Queries: {num_queries} (Prefix: {self.num_prefix_queries}) | InjectLayer: {self.inject_layer} | Adaptive: {self.adaptive_mode} | Pooling: {pooling} | Layers: {layers} | Head: {head_type} | Attn: {attn_implementation}")
 
         from transformers import AutoModel, AutoTokenizer
 
@@ -325,9 +436,22 @@ class SLQMultiLayerEncoder(nn.Module):
         self.query_norm_late = None
         self.meta_queries_prefix = None
         self.meta_queries_suffix = None
+        self.mlp_query_gen = None
+        self.moe_query_pool = None
 
         half_q = max(1, num_queries // 2)
-        if num_queries == 0:
+        if self.adaptive_mode == "mlp":
+            self.mlp_query_gen = MLPQueryGenerator(in_dim=D, num_queries=num_queries).to(device=device, dtype=dtype)
+            self.num_pool_queries = num_queries
+            self.num_suffix_queries = 0
+        elif self.adaptive_mode == "moe_pool":
+            self.moe_query_pool = DeepSeekSparseQueryPool(
+                in_dim=D, pool_size=self.moe_pool_size, num_shared=self.moe_shared_queries,
+                num_routed=self.moe_routed_queries, balance_gamma=self.loss_free_gamma
+            ).to(device=device, dtype=dtype)
+            self.num_pool_queries = num_queries
+            self.num_suffix_queries = 0
+        elif num_queries == 0:
             self.num_pool_queries = 0
             self.num_suffix_queries = 0
         elif self.num_prefix_queries > 0:
@@ -389,7 +513,17 @@ class SLQMultiLayerEncoder(nn.Module):
             def inject_hook(module, args):
                 h = args[0]
                 B = h.size(0)
-                if self.num_prefix_queries > 0:
+                if self.adaptive_mode == "mlp":
+                    # Lấy Last Token L11 của chuỗi input thực sự (ngay trước các dummy queries)
+                    u_last = h[:, -self.num_queries - 1, :].to(dtype=self.dtype)
+                    q_fresh = self.mlp_query_gen(u_last).to(device=h.device, dtype=h.dtype)
+                    h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
+                elif self.adaptive_mode == "moe_pool":
+                    # Lấy Last Token L11 của chuỗi input thực sự
+                    u_last = h[:, -self.num_queries - 1, :].to(dtype=self.dtype)
+                    q_fresh = self.moe_query_pool(u_last).to(device=h.device, dtype=h.dtype)
+                    h_new = torch.cat([h[:, :-self.num_queries], q_fresh], dim=1)
+                elif self.num_prefix_queries > 0:
                     # Thay thế num_suffix_queries cuối bằng q_suffix tươi mới
                     norm_mod = self.query_norm_late
                     if norm_mod is not None and norm_mod.weight.dtype != h.dtype:
@@ -536,13 +670,18 @@ class SLQMultiLayerEncoder(nn.Module):
 
     def get_trainable_params(self):
         params = []
-        for p in [self.meta_queries, self.meta_queries_early, self.meta_queries_late,
-                  self.meta_queries_prefix, self.meta_queries_suffix]:
-            if p is not None:
-                params.append(p)
-        for norm in [self.query_norm, self.query_norm_late]:
-            if norm is not None:
-                params.extend(list(norm.parameters()))
+        if self.adaptive_mode == "mlp" and self.mlp_query_gen is not None:
+            params.extend(list(self.mlp_query_gen.parameters()))
+        elif self.adaptive_mode == "moe_pool" and self.moe_query_pool is not None:
+            params.extend(list(self.moe_query_pool.parameters()))
+        else:
+            for p in [self.meta_queries, self.meta_queries_early, self.meta_queries_late,
+                      self.meta_queries_prefix, self.meta_queries_suffix]:
+                if p is not None:
+                    params.append(p)
+            for norm in [self.query_norm, self.query_norm_late]:
+                if norm is not None:
+                    params.extend(list(norm.parameters()))
         params.append(self.logit_scale)
         if self.head is not None:
             params.extend(list(self.head.parameters()))
@@ -557,7 +696,12 @@ class SLQMultiLayerEncoder(nn.Module):
             "pooling": self.pooling,
             "inject_layer": getattr(self, "inject_layer", 1),
             "query_split": getattr(self, "query_split", "none"),
+            "adaptive_mode": getattr(self, "adaptive_mode", "none"),
         }
+        if self.adaptive_mode == "mlp" and self.mlp_query_gen is not None:
+            ck["mlp_query_gen_state_dict"] = {k: v.cpu() for k, v in self.mlp_query_gen.state_dict().items()}
+        elif self.adaptive_mode == "moe_pool" and self.moe_query_pool is not None:
+            ck["moe_query_pool_state_dict"] = {k: v.cpu() for k, v in self.moe_query_pool.state_dict().items()}
         for name in ["meta_queries", "meta_queries_early", "meta_queries_late", "meta_queries_prefix", "meta_queries_suffix"]:
             param = getattr(self, name, None)
             if param is not None:
@@ -572,6 +716,14 @@ class SLQMultiLayerEncoder(nn.Module):
 
     def load_queries(self, path):
         ck = torch.load(path, map_location="cpu")
+        if getattr(self, "adaptive_mode", "none") == "mlp" and "mlp_query_gen_state_dict" in ck and self.mlp_query_gen is not None:
+            sd = {k: v.to(device=self.device, dtype=self.dtype) for k, v in ck["mlp_query_gen_state_dict"].items()}
+            self.mlp_query_gen.load_state_dict(sd)
+            print("Đã nạp trọng số MLPQueryGenerator thành công.")
+        elif getattr(self, "adaptive_mode", "none") == "moe_pool" and "moe_query_pool_state_dict" in ck and self.moe_query_pool is not None:
+            sd = {k: v.to(device=self.device) for k, v in ck["moe_query_pool_state_dict"].items()}
+            self.moe_query_pool.load_state_dict(sd)
+            print("Đã nạp trọng số DeepSeekSparseQueryPool thành công.")
         for name in ["meta_queries", "meta_queries_early", "meta_queries_late", "meta_queries_prefix", "meta_queries_suffix"]:
             param = getattr(self, name, None)
             if param is not None and name in ck and ck[name] is not None:
@@ -789,12 +941,19 @@ def train(args):
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
         num_prefix_queries=getattr(args, "num_prefix_queries", 0),
+        adaptive_mode=getattr(args, "adaptive_mode", "none"),
+        moe_pool_size=getattr(args, "moe_pool_size", 30),
+        moe_shared_queries=getattr(args, "moe_shared_queries", 5),
+        moe_routed_queries=getattr(args, "moe_routed_queries", 15),
+        loss_free_gamma=getattr(args, "loss_free_gamma", 0.01),
     )
 
     # Đảm bảo 100% tất cả các GPU có chung trọng số khởi tạo ban đầu
     if is_ddp and world_size > 1:
         for p in model.get_trainable_params():
             dist.broadcast(p.data, src=0)
+        if hasattr(model, "moe_query_pool") and model.moe_query_pool is not None:
+            dist.broadcast(model.moe_query_pool.balance_bias, src=0)
         dist.barrier()
 
     model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -1166,6 +1325,11 @@ def evaluate(args):
         inject_layer=getattr(args, "inject_layer", 1),
         query_split=getattr(args, "query_split", "none"),
         num_prefix_queries=getattr(args, "num_prefix_queries", 0),
+        adaptive_mode=getattr(args, "adaptive_mode", "none"),
+        moe_pool_size=getattr(args, "moe_pool_size", 30),
+        moe_shared_queries=getattr(args, "moe_shared_queries", 5),
+        moe_routed_queries=getattr(args, "moe_routed_queries", 15),
+        loss_free_gamma=getattr(args, "loss_free_gamma", 0.01),
     )
     if args.queries != "init":
         model.load_queries(args.queries)
@@ -1175,6 +1339,8 @@ def evaluate(args):
     if is_ddp and world_size > 1:
         for p in model.get_trainable_params():
             dist.broadcast(p.data, src=0)
+        if hasattr(model, "moe_query_pool") and model.moe_query_pool is not None:
+            dist.broadcast(model.moe_query_pool.balance_bias, src=0)
         dist.barrier()
 
     wandb_run = None
@@ -1214,6 +1380,11 @@ if __name__ == "__main__":
     ap.add_argument("--num_prefix_queries", type=int, default=0, help="Số lượng prefix query đặt ở đầu chuỗi (vd: 5). Nếu > 0, các query còn lại (num_queries - num_prefix) sẽ là suffix query ở cuối chuỗi)")
     ap.add_argument("--inject_layer", type=int, default=1, help="Tầng bắt đầu chèn Latent Queries (mặc định 1: chèn tại input; hoặc 12, 16, 18, 20)")
     ap.add_argument("--query_split", default="none", choices=["none", "layer_split", "seq_split", "prefix_suffix"], help="Chế độ chia query: 'none' (chuẩn), 'layer_split' (10 tại L1 + 10 tại inject_layer), 'seq_split' (10 prefix + 10 suffix)")
+    ap.add_argument("--adaptive_mode", default="none", choices=["none", "mlp", "moe_pool"], help="Chế độ Adaptive Query: 'none' (tĩnh), 'mlp' (Ý tưởng 1: sinh qua MLP từ L11), 'moe_pool' (Ý tưởng 2: DeepSeek MoE Pool)")
+    ap.add_argument("--moe_pool_size", type=int, default=30, help="Kích thước ngân hàng Query Pool M (mặc định 30)")
+    ap.add_argument("--moe_shared_queries", type=int, default=5, help="Số query cố định dùng chung (mặc định 5)")
+    ap.add_argument("--moe_routed_queries", type=int, default=15, help="Số query chọn động từ pool (mặc định 15)")
+    ap.add_argument("--loss_free_gamma", type=float, default=0.01, help="Hệ số bước cập nhật bias DeepSeek Loss-Free Load Balancing (mặc định 0.01)")
     ap.add_argument("--pooling", default="mean", choices=["mean", "last", "max"], help="Chiến lược pooling qua N queries: 'mean' (mặc định), 'last', hoặc 'max'")
     ap.add_argument("--layers", default="6,12,18,24", help="Các layers cần trích xuất, vd: '6,12,18,24' hoặc '-4,-3,-2,-1'")
     ap.add_argument("--head_type", default="residual", choices=["residual", "mlp", "mean", "cross_attn", "linear", "weighted", "none", "identity"], help="Kiểu projector: 'residual', 'mlp', 'mean', 'linear', 'none', ...")
