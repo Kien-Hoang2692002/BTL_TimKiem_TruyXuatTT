@@ -331,65 +331,35 @@ L = ½ (L<sub>I2T</sub> + L<sub>T2I</sub>)</pre>
  </div>
 </section>
 
-<!-- 10. SETUP TÁI HIỆN -->
+<!-- 10. HAI ĐỢT TÁI HIỆN -->
 <section class="slide">
  <div class="inner">
   <div class="tag rv">09 · Tái hiện</div>
-  <h2 class="rv">Thiết lập thí nghiệm <span class="g">của nhóm</span></h2>
-  <div class="cols c2">
-   <div class="card rv">
-    <table>
-     <tr><th></th><th>Bài báo</th><th>Nhóm</th></tr>
-     <tr><td>Backbone</td><td>InternVL3-1B</td><td>InternVL3-1B</td></tr>
-     <tr><td>Số query N</td><td>20</td><td>20</td></tr>
-     <tr><td>Dữ liệu train</td><td>COCO train, 5 epoch</td><td class="am">20k cặp COCO, 1 epoch</td></tr>
-     <tr><td>Batch</td><td>1024</td><td class="am">64</td></tr>
-     <tr><td>Learning rate</td><td>5e-4</td><td>5e-4</td></tr>
-     <tr><td>Phần cứng</td><td>8× H800</td><td class="am">1× T4 (Kaggle)</td></tr>
-     <tr><td>Độ chính xác</td><td>bf16 + FlashAttn</td><td class="am">fp32</td></tr>
-    </table>
-   </div>
-   <div class="rv">
-    <div class="cols c2" style="margin-bottom:18px">
-     <div class="card stat"><div class="big g" data-count="17921" data-sep="1">0</div><div class="lbl">Tham số huấn luyện</div></div>
-     <div class="card stat"><div class="big hl"><span data-count="0.021" data-dec="3">0</span></div><div class="lbl">τ học được (khởi tạo 0,07)</div></div>
-    </div>
-    <p>Số tham số = 20 × 896 + 1 (τ). Toàn bộ <b>~1 tỷ</b> tham số của InternVL3-1B bị <span class="hl">đóng băng</span>.</p>
-    <p class="mute" style="font-size:14px;margin-top:10px">Bài báo ghi ~36K tham số cho bản 1B. Code tác giả công bố chỉ cho ra 20×896 ≈ 18K.</p>
-   </div>
+  <h2 class="rv">Hai đợt tái hiện <span class="g">từ nhỏ đến đầy đủ</span></h2>
+  <div class="card rv">
+   <table>
+    <tr><th></th><th>Bài báo</th><th>Đợt 1: Kaggle T4</th><th>Đợt 2: 4× A100</th></tr>
+    <tr><td>Backbone</td><td>InternVL3-1B</td><td>InternVL3-1B</td><td>InternVL3-1B</td></tr>
+    <tr><td>Số query N</td><td>20</td><td>20</td><td>20</td></tr>
+    <tr><td>Dữ liệu train</td><td>COCO train, 5 epoch</td><td class="am">20k cặp, 1 epoch</td><td class="lm">Toàn bộ COCO, 5 epoch</td></tr>
+    <tr><td>Batch</td><td>1024</td><td class="am">64</td><td>256 × 4 GPU</td></tr>
+    <tr><td>Độ chính xác</td><td>bf16</td><td class="am">fp32</td><td class="lm">bf16</td></tr>
+    <tr><td>Phần cứng</td><td>8× H800</td><td>1× T4 (miễn phí)</td><td>4× A100 80GB</td></tr>
+    <tr><td>Tham số học</td><td>~36K (theo bài)</td><td>17.921</td><td>17.921 – 19,7K</td></tr>
+   </table>
   </div>
- </div>
-</section>
-
-<!-- 10b. HUẤN LUYỆN -->
-<section class="slide">
- <div class="inner">
-  <div class="tag rv">10 · Quá trình huấn luyện</div>
-  <h2 class="rv">Loss hội tụ chỉ sau <span class="g">~100 bước</span></h2>
-  <div class="cols c2" style="align-items:center">
-   <div class="card rv">
-    <svg id="losschart" viewBox="0 0 460 250" width="100%" style="overflow:visible" data-loss="3.6319,1.9764,1.1325,0.8679,0.5291,0.4615,0.5482,0.4396,0.3212,0.3209,0.3473,0.3285,0.2898,0.3992,0.1815,0.2917,0.4064,0.4771,0.3180,0.3300,0.2445,0.2372,0.1917,0.3432,0.3629,0.3253,0.3452,0.4353,0.4025,0.1573,0.2583,0.2733" data-tau="0.0699,0.0669,0.0617,0.0563,0.0512,0.0463,0.0418,0.0376,0.0339,0.0309,0.0286,0.0264,0.0244,0.0239,0.0231,0.0224,0.0218,0.0219,0.0215,0.0212,0.0210,0.0209,0.0207,0.0207,0.0207,0.0208,0.0209,0.0209,0.0208,0.0208,0.0207,0.0207"></svg>
-    <p class="mute" style="font-size:12px;margin-top:6px"><span class="pk">━</span> Loss InfoNCE (trục trái) &nbsp; <span class="hl">━</span> Nhiệt độ τ (trục phải) · log Kaggle, mỗi 10 bước</p>
-   </div>
-   <div class="rv">
-    <div class="cols c2" style="margin-bottom:16px">
-     <div class="card stat"><div class="big g" data-count="155" data-suf="′">0</div><div class="lbl">Thời gian train (T4)</div></div>
-     <div class="card stat"><div class="big hl" data-count="312">0</div><div class="lbl">Bước × batch 64</div></div>
-    </div>
-    <ul class="clean">
-     <li>Loss giảm từ <span class="pk">3,63</span> xuống khoảng <span class="lm">0,2–0,3</span>. Mức loss khi đoán ngẫu nhiên là ln 64 ≈ 4,16.</li>
-     <li>τ tự học từ 0,070 xuống <b>0,021</b>, làm phân phối softmax "nhọn" hơn.</li>
-     <li>Toàn bộ lần chạy (zero-shot, train, đánh giá) mất khoảng <b>3,6 giờ</b> GPU trên Kaggle.</li>
-    </ul>
-   </div>
+  <div class="cols c2 rv" style="margin-top:18px">
+   <div class="card"><p><b class="hl">Đợt 1</b>: chứng minh phương pháp chạy được trên GPU miễn phí, đồng thời tìm và sửa lỗi trong code gốc.</p></div>
+   <div class="card"><p><b class="lm">Đợt 2</b>: chạy đúng cấu hình bài báo để so sánh công bằng, và làm nền cho các cải tiến của nhóm.</p></div>
   </div>
+  <p class="rv mute" style="font-size:13px;margin-top:12px">Số tham số: 20 × 896 + 1 (τ) = 17.921. Các biến thể có tiêm query ở tầng giữa thêm một LayerNorm (+1.792), thành 19,7K. Đợt 2 dùng script `slq_multilayer.py`.</p>
  </div>
 </section>
 
 <!-- 11. KHÓ KHĂN -->
 <section class="slide">
  <div class="inner">
-  <div class="tag rv">11 · Quá trình tái hiện</div>
+  <div class="tag rv">10 · Lỗi khi tái hiện</div>
   <h2 class="rv">Những <span class="g">"hố"</span> đã gặp và cách xử lý</h2>
   <div class="cols c2">
    <div class="card rv">
@@ -414,88 +384,195 @@ L = ½ (L<sub>I2T</sub> + L<sub>T2I</sub>)</pre>
  </div>
 </section>
 
-<!-- 12. KẾT QUẢ ZERO-SHOT vs TRAIN -->
+<!-- 10b. HUẤN LUYỆN -->
 <section class="slide">
  <div class="inner">
-  <div class="tag rv">12 · Kết quả của nhóm</div>
-  <h2 class="rv">Trước và sau khi học <span class="g">20 query</span> <span class="mute" style="font-size:.5em">Flickr30K-1K</span></h2>
-  <div class="cols c2">
+  <div class="tag rv">11 · Huấn luyện Đợt 1 (Kaggle T4)</div>
+  <h2 class="rv">Loss hội tụ chỉ sau <span class="g">~100 bước</span></h2>
+  <div class="cols c2" style="align-items:center">
    <div class="card rv">
-    <h3 class="hl">Text → Image</h3>
-    <div class="bars" data-bars style="margin-top:12px">
-     <div class="bar"><span class="mute">R@1 zero-shot</span><div class="track"><div class="fill alt" data-w="7.16"></div></div><span class="v">7,2</span></div>
-     <div class="bar"><span>R@1 SLQ</span><div class="track"><div class="fill" data-w="68.98"></div></div><span class="v">69,0</span></div>
-     <div class="bar"><span class="mute">R@5 zero-shot</span><div class="track"><div class="fill alt" data-w="17.64"></div></div><span class="v">17,6</span></div>
-     <div class="bar"><span>R@5 SLQ</span><div class="track"><div class="fill" data-w="89.86"></div></div><span class="v">89,9</span></div>
-     <div class="bar"><span class="mute">R@10 zero-shot</span><div class="track"><div class="fill alt" data-w="24.44"></div></div><span class="v">24,4</span></div>
-     <div class="bar"><span>R@10 SLQ</span><div class="track"><div class="fill" data-w="93.70"></div></div><span class="v">93,7</span></div>
-    </div>
+    <svg id="losschart" viewBox="0 0 460 250" width="100%" style="overflow:visible" data-loss="3.6319,1.9764,1.1325,0.8679,0.5291,0.4615,0.5482,0.4396,0.3212,0.3209,0.3473,0.3285,0.2898,0.3992,0.1815,0.2917,0.4064,0.4771,0.3180,0.3300,0.2445,0.2372,0.1917,0.3432,0.3629,0.3253,0.3452,0.4353,0.4025,0.1573,0.2583,0.2733" data-tau="0.0699,0.0669,0.0617,0.0563,0.0512,0.0463,0.0418,0.0376,0.0339,0.0309,0.0286,0.0264,0.0244,0.0239,0.0231,0.0224,0.0218,0.0219,0.0215,0.0212,0.0210,0.0209,0.0207,0.0207,0.0207,0.0208,0.0209,0.0209,0.0208,0.0208,0.0207,0.0207"></svg>
+    <p class="mute" style="font-size:12px;margin-top:6px"><span class="pk">━</span> Loss InfoNCE (trục trái) &nbsp; <span class="hl">━</span> Nhiệt độ τ (trục phải) · log Kaggle, mỗi 10 bước</p>
    </div>
-   <div class="card rv">
-    <h3 class="pk">Image → Text</h3>
-    <div class="bars" data-bars style="margin-top:12px">
-     <div class="bar"><span class="mute">R@1 zero-shot</span><div class="track"><div class="fill alt" data-w="17.7"></div></div><span class="v">17,7</span></div>
-     <div class="bar"><span>R@1 SLQ</span><div class="track"><div class="fill" data-w="75.7"></div></div><span class="v">75,7</span></div>
-     <div class="bar"><span class="mute">R@5 zero-shot</span><div class="track"><div class="fill alt" data-w="34.9"></div></div><span class="v">34,9</span></div>
-     <div class="bar"><span>R@5 SLQ</span><div class="track"><div class="fill" data-w="94.1"></div></div><span class="v">94,1</span></div>
-     <div class="bar"><span class="mute">R@10 zero-shot</span><div class="track"><div class="fill alt" data-w="43.9"></div></div><span class="v">43,9</span></div>
-     <div class="bar"><span>R@10 SLQ</span><div class="track"><div class="fill" data-w="98.5"></div></div><span class="v">98,5</span></div>
+   <div class="rv">
+    <div class="cols c2" style="margin-bottom:16px">
+     <div class="card stat"><div class="big g" data-count="155" data-suf="′">0</div><div class="lbl">Thời gian train (T4)</div></div>
+     <div class="card stat"><div class="big hl" data-count="312">0</div><div class="lbl">Bước × batch 64</div></div>
     </div>
+    <ul class="clean">
+     <li>Loss giảm từ <span class="pk">3,63</span> xuống khoảng <span class="lm">0,2–0,3</span>. Mức loss khi đoán ngẫu nhiên là ln 64 ≈ 4,16.</li>
+     <li>τ tự học từ 0,070 xuống <b>0,021</b>, làm phân phối softmax "nhọn" hơn.</li>
+     <li>Toàn bộ lần chạy (zero-shot, train, đánh giá) mất khoảng <b>3,6 giờ</b> GPU trên Kaggle.</li>
+    </ul>
    </div>
   </div>
-  <p class="rv mute" style="font-size:14px;margin-top:16px">Text→Image R@1 tăng <b class="lm">gần 10 lần</b> (7,2 → 69,0) chỉ nhờ học 17.921 tham số. <i>Zero-shot</i> = 20 query khởi tạo ngẫu nhiên, chưa huấn luyện.</p>
  </div>
 </section>
 
-<!-- 13. SO SÁNH -->
+<!-- 13. KẾT QUẢ TÁI HIỆN -->
 <section class="slide">
  <div class="inner">
-  <div class="tag rv">13 · So sánh</div>
-  <h2 class="rv">Nhóm <span class="mute">vs</span> bài báo <span class="mute">vs</span> CLIP</h2>
+  <div class="tag rv">12 · Kết quả tái hiện</div>
+  <h2 class="rv">Đợt 2 đạt <span class="g">sát bài báo</span></h2>
   <div class="card rv">
    <table>
-    <tr><th rowspan="2">Mô hình</th><th colspan="2">Flickr30K I→T</th><th colspan="2">Flickr30K T→I</th><th colspan="2">COCO-5K I→T</th><th colspan="2">COCO-5K T→I</th></tr>
-    <tr><th>R@1</th><th>R@5</th><th>R@1</th><th>R@5</th><th>R@1</th><th>R@5</th><th>R@1</th><th>R@5</th></tr>
-    <tr><td>CLIP ViT-B</td><td>77,8</td><td>95,0</td><td>58,8</td><td>83,3</td><td>51,0</td><td>74,9</td><td>30,5</td><td>56,0</td></tr>
-    <tr><td>CLIP ViT-L</td><td>87,2</td><td>98,3</td><td>67,3</td><td>89,0</td><td>58,1</td><td>81,0</td><td>37,0</td><td>61,6</td></tr>
-    <tr class="paper"><td>SLQ-1B (bài báo)</td><td>86,7</td><td>97,8</td><td>74,4</td><td>92,9</td><td>61,2</td><td>84,9</td><td>48,5</td><td>74,3</td></tr>
-    <tr class="me"><td>SLQ-1B (nhóm)</td><td>75,7</td><td>94,1</td><td>69,0</td><td>89,9</td><td>50,9</td><td>76,8</td><td>42,1</td><td>68,4</td></tr>
+    <tr><th>Mô hình (InternVL3-1B)</th><th>Tham số</th><th>COCO I→T R@1</th><th>COCO I→T R@5</th><th>COCO T→I R@1</th><th>Flickr I→T R@1</th><th>Flickr T→I R@1</th></tr>
+    <tr><td class="mute">Zero-shot, last token</td><td>0</td><td>2,04</td><td>7,28</td><td>1,52</td><td>4,60</td><td>4,02</td></tr>
+    <tr><td class="mute">Linear head trên last token</td><td>803,7K</td><td>37,08</td><td>66,92</td><td>28,03</td><td>55,40</td><td>47,56</td></tr>
+    <tr><td>Đợt 1: Kaggle T4</td><td>17,9K</td><td>50,90</td><td>76,84</td><td>42,11</td><td>75,70</td><td>68,98</td></tr>
+    <tr class="me"><td>Đợt 2: 4× A100</td><td>19,7K</td><td>60,10</td><td>85,12</td><td>47,75</td><td>84,40</td><td>73,06</td></tr>
+    <tr class="paper"><td>SLQ-1B (Bảng 1 bài báo)</td><td>~36K</td><td>61,2</td><td>84,9</td><td>48,5</td><td>86,7</td><td>74,4</td></tr>
    </table>
   </div>
-  <div class="cols c4 rv" style="margin-top:20px">
-   <div class="card stat"><div class="big g" data-count="92.7" data-dec="1" data-suf="%">0</div><div class="lbl">Flickr T→I R@1 so với bài báo</div></div>
-   <div class="card stat"><div class="big g" data-count="96.7" data-dec="1" data-suf="%">0</div><div class="lbl">Flickr T→I R@5 so với bài báo</div></div>
-   <div class="card stat"><div class="big g" data-count="86.8" data-dec="1" data-suf="%">0</div><div class="lbl">COCO T→I R@1 so với bài báo</div></div>
-   <div class="card stat"><div class="big lm" data-count="11.6" data-dec="1" data-pre="+">0</div><div class="lbl">COCO T→I R@1 hơn CLIP ViT-B</div></div>
+  <div class="cols c3 rv" style="margin-top:18px">
+   <div class="card stat"><div class="big g" data-count="98.2" data-dec="1" data-suf="%">0</div><div class="lbl">COCO I→T R@1 so với bài báo</div></div>
+   <div class="card stat"><div class="big g" data-count="98.5" data-dec="1" data-suf="%">0</div><div class="lbl">COCO T→I R@1 so với bài báo</div></div>
+   <div class="card stat"><div class="big lm" data-count="23" data-pre="+">0</div><div class="lbl">COCO I→T R@1: SLQ hơn linear head</div></div>
+  </div>
+  <p class="rv mute" style="font-size:13px;margin-top:12px">Đợt 2 thấp hơn bài báo 0,7–2,3 điểm R@1 (riêng COCO I→T R@5 cao hơn 0,2). Linear head có gấp ~40 lần tham số nhưng kém xa SLQ, khớp với kết luận ở Bảng 5 của bài báo. Số liệu Đợt 2 lấy từ báo cáo WandB của nhóm, chạy 1 seed.</p>
+ </div>
+</section>
+
+<!-- 14. HƯỚNG CẢI TIẾN -->
+<section class="slide">
+ <div class="inner">
+  <div class="tag rv">13 · Cải tiến của nhóm</div>
+  <h2 class="rv">Bốn hướng cải tiến, gộp thành <span class="g">AdaSLQ</span></h2>
+  <div class="cols c2" style="align-items:start">
+   <div class="rv">
+    <div class="mute mono" style="font-size:12px;margin-bottom:8px">CHUỖI ĐẦU VÀO CỦA AdaSLQ</div>
+    <div class="seq"><span class="tok t-q">p₁…p₅</span><span class="tok t-img">IMG / TEXT</span><span class="tok t-p">prompt</span><span class="tok t-p">· · ·</span></div>
+    <div class="arrow">↓ tầng 1 → 11 (đóng băng)</div>
+    <div class="seq"><span class="tok t-p">last token tầng 11</span><span class="mute">→ MLP →</span><span class="tok t-q">q₁…q₁₅ (thích ứng)</span></div>
+    <div class="arrow">↓ tiêm 15 query vào tầng 12, chạy tiếp tới tầng 24</div>
+    <div class="seq"><span class="tok t-img">tầng 21–23</span><span class="mute">→ Residual MLP →</span><span class="tok t-q">h₂₄ + α·Δ</span><span class="mute">→</span><span class="tok t-img">z</span></div>
+    <div class="frozen" style="margin-top:14px">❄️ InternVL3-1B vẫn đóng băng 100%</div>
+   </div>
+   <div class="rv" style="display:grid;gap:12px">
+    <div class="card"><h3 class="pk">① Prefix steering</h3><p>Đặt 5 query ở <b>đầu</b> chuỗi để "định hướng" cách mô hình đọc đầu vào. 15 query còn lại vẫn ở cuối.</p></div>
+    <div class="card"><h3 class="hl">② Late Query Injection (LQI)</h3><p>Tiêm query ở <b>tầng giữa</b> (tầng 12) thay vì tầng 1, nơi biểu diễn đã giàu ngữ nghĩa.</p></div>
+    <div class="card"><h3 class="lm">③ Multi-layer residual (MR-4)</h3><p>Lấy hidden state 4 tầng cuối: h₂₄ + α·MLP(h₂₁, h₂₂, h₂₃), với α khởi tạo bằng 0.</p></div>
+    <div class="card"><h3 class="am">④ Query thích ứng (IAQ)</h3><p>Query = Q<sub>gốc</sub> + α·MLP(last token tầng 11): mỗi ảnh hoặc câu có bộ query riêng.</p></div>
+   </div>
   </div>
  </div>
 </section>
 
-<!-- 14. PHÂN TÍCH -->
+<!-- 15. PREFIX + LQI -->
 <section class="slide">
  <div class="inner">
-  <div class="tag rv">14 · Phân tích</div>
-  <h2 class="rv">Vì sao vẫn <span class="g">thấp hơn bài báo?</span></h2>
-  <div class="cols c3">
-   <div class="card rv"><div class="ico">📉</div><h3>Ít dữ liệu hơn</h3><p>Chỉ <b>~20k cặp × 1 epoch</b>, so với toàn bộ COCO train × 5 epoch của bài báo. Mô hình thấy ít mẫu hơn nhiều lần.</p></div>
-   <div class="card rv"><div class="ico">🎯</div><h3>Batch nhỏ</h3><p>64 so với 1024: số <b>mẫu âm</b> trong mỗi batch của InfoNCE ít hơn 16 lần, nên tín hiệu tương phản yếu hơn.</p></div>
-   <div class="card rv"><div class="ico">⚙️</div><h3>Phần cứng</h3><p>1 GPU T4 chạy fp32 (155 phút cho 20k cặp), so với 8× H800 chạy bf16. Quota Kaggle khoảng 30 giờ/tuần nên không thể train đủ lâu.</p></div>
+  <div class="tag rv">14 · Ablation: vị trí query</div>
+  <h2 class="rv">Tiêm query ở <span class="g">giữa mạng</span> tốt hơn tầng 1</h2>
+  <div class="cols c2">
+   <div class="card rv">
+    <h3 class="hl">② Tầng tiêm query <span class="mute" style="font-size:13px;font-weight:400">(COCO I→T R@1)</span></h3>
+    <div class="bars" data-bars data-range="58,64.5" style="margin-top:12px">
+     <div class="bar"><span class="mute">Tầng 1 (SLQ gốc)</span><div class="track"><div class="fill alt" data-w="60.10"></div></div><span class="v">60,10</span></div>
+     <div class="bar"><span>Tầng 8</span><div class="track"><div class="fill" data-w="63.28"></div></div><span class="v">63,28</span></div>
+     <div class="bar"><span>Tầng 12 ⭐</span><div class="track"><div class="fill" data-w="63.40"></div></div><span class="v">63,40</span></div>
+     <div class="bar"><span>Tầng 16</span><div class="track"><div class="fill" data-w="63.54"></div></div><span class="v">63,54</span></div>
+     <div class="bar"><span>Tầng 20</span><div class="track"><div class="fill alt" data-w="60.50"></div></div><span class="v">60,50</span></div>
+    </div>
+    <p class="mute" style="font-size:12px;margin-top:10px">Trục bắt đầu từ 58. Tầng 8–16 cho kết quả gần như ngang nhau. Chọn tầng 12 vì COCO T→I tốt nhất (50,38).</p>
+   </div>
+   <div class="card rv">
+    <h3 class="pk">① Số query đặt ở đầu <span class="mute" style="font-size:13px;font-weight:400">(COCO I→T R@1)</span></h3>
+    <div class="bars" data-bars data-range="58,64.5" style="margin-top:12px">
+     <div class="bar"><span class="mute">0 đầu + 20 cuối</span><div class="track"><div class="fill alt" data-w="60.10"></div></div><span class="v">60,10</span></div>
+     <div class="bar"><span>5 đầu + 15 cuối ⭐</span><div class="track"><div class="fill" data-w="62.22"></div></div><span class="v">62,22</span></div>
+     <div class="bar"><span>10 đầu + 10 cuối</span><div class="track"><div class="fill" data-w="60.96"></div></div><span class="v">60,96</span></div>
+     <div class="bar"><span>15 đầu + 5 cuối</span><div class="track"><div class="fill" data-w="61.24"></div></div><span class="v">61,24</span></div>
+    </div>
+    <p class="mute" style="font-size:12px;margin-top:10px">Query ở đầu không nhìn thấy đầu vào (causal), nhưng các token phía sau nhìn thấy nó, nên nó đóng vai trò "lời dặn" chung.</p>
+   </div>
   </div>
-  <div class="card glow rv" style="margin-top:20px">
-   <p>✅ <b>Xu hướng chính được tái hiện:</b> chỉ học <span class="hl">17.921 tham số</span> trên một backbone đóng băng mà đã <span class="lm">vượt CLIP ViT-B</span> ở chiều Text→Image và đạt <span class="lm">~83–97%</span> hiệu năng bài báo, dù tài nguyên ít hơn nhiều.</p>
+  <p class="rv" style="margin-top:16px">Giải thích: ở tầng 1, query phải tự "đọc" từ embedding thô. Tiêm ở tầng giữa giúp query gặp ngay biểu diễn đã giàu ngữ nghĩa. Tiêm quá muộn (tầng 20) thì không còn đủ tầng để tổng hợp thông tin.</p>
+ </div>
+</section>
+
+<!-- 16. MULTI-LAYER + ADAPTIVE -->
+<section class="slide">
+ <div class="inner">
+  <div class="tag rv">15 · Ablation: trích xuất &amp; thích ứng</div>
+  <h2 class="rv">Đọc nhiều tầng và <span class="g">sinh query theo đầu vào</span></h2>
+  <div class="cols c2">
+   <div class="card rv">
+    <h3 class="lm">③ Cách lấy embedding <span class="mute" style="font-size:13px;font-weight:400">(tiêm tầng 1)</span></h3>
+    <table>
+     <tr><th>Cấu hình</th><th>Tham số</th><th>COCO I→T@1</th><th>Flickr I→T@1</th></tr>
+     <tr><td class="mute">Chỉ tầng 24 (SLQ gốc)</td><td>19,7K</td><td>60,10</td><td>84,40</td></tr>
+     <tr><td>Trung bình 2 tầng cuối</td><td>19,7K</td><td>60,50</td><td>85,30</td></tr>
+     <tr><td>Trung bình 4 tầng cuối</td><td>19,7K</td><td>60,44</td><td>82,70</td></tr>
+     <tr><td>4 tầng cách nhau + Residual</td><td>3,23M</td><td>62,50</td><td>85,90</td></tr>
+     <tr class="me"><td>4 tầng cuối + Residual (MR-4)</td><td>3,23M</td><td>64,94</td><td>86,60</td></tr>
+    </table>
+    <p class="mute" style="font-size:12px;margin-top:8px">Lấy trung bình đơn thuần không giúp gì. Cần một head có học (residual) mới khai thác được các tầng.</p>
+   </div>
+   <div class="card rv">
+    <h3 class="am">④ Query tĩnh và query thích ứng <span class="mute" style="font-size:13px;font-weight:400">(tiêm tầng 12)</span></h3>
+    <table>
+     <tr><th>Cấu hình</th><th>Tham số</th><th>COCO I→T@1</th><th>COCO T→I@1</th></tr>
+     <tr><td class="mute">LQI-12 tĩnh</td><td>19,7K</td><td>63,40</td><td>50,38</td></tr>
+     <tr class="me"><td>LQI-12 thích ứng (IAQ-12)</td><td>9,67M</td><td>66,32</td><td>52,64</td></tr>
+     <tr><td class="mute">MoE pool 30 query</td><td>271K</td><td>63,28</td><td>50,01</td></tr>
+     <tr><td class="mute">MoE pool 60 query</td><td>306K</td><td>63,74</td><td>50,19</td></tr>
+    </table>
+    <p class="mute" style="font-size:12px;margin-top:8px">Sinh query bằng MLP tăng gần 3 điểm. Chọn query từ một "ngân hàng" (MoE) gần như không giúp gì.</p>
+   </div>
   </div>
  </div>
 </section>
 
-<!-- 15. KẾT LUẬN -->
+<!-- 17. AdaSLQ -->
 <section class="slide">
  <div class="inner">
-  <div class="tag rv">15 · Kết luận</div>
+  <div class="tag rv">16 · Mô hình đề xuất</div>
+  <h2 class="rv"><span class="g">AdaSLQ</span>: gộp các hướng tốt nhất</h2>
+  <div class="card rv">
+   <table>
+    <tr><th>Cấu hình</th><th>Tham số</th><th>COCO I→T@1</th><th>COCO I→T@5</th><th>COCO T→I@1</th><th>Flickr I→T@1</th><th>Flickr T→I@1</th></tr>
+    <tr class="paper"><td>SLQ-1B (bài báo)</td><td>~36K</td><td>61,2</td><td>84,9</td><td>48,5</td><td>86,7</td><td>74,4</td></tr>
+    <tr><td>SLQ tái lập (Đợt 2)</td><td>19,7K</td><td>60,10</td><td>85,12</td><td>47,75</td><td>84,40</td><td>73,06</td></tr>
+    <tr><td class="mute">Chỉ ① Prefix 5+15</td><td>17,9K</td><td>62,22</td><td>85,52</td><td>48,38</td><td>85,90</td><td>73,44</td></tr>
+    <tr><td class="mute">Chỉ ② LQI-12</td><td>19,7K</td><td>63,40</td><td>86,64</td><td>50,38</td><td>86,30</td><td>76,32</td></tr>
+    <tr><td class="mute">Chỉ ③ MR-4</td><td>3,23M</td><td>64,94</td><td>87,78</td><td>50,68</td><td>86,60</td><td>75,70</td></tr>
+    <tr><td class="mute">Chỉ ④ IAQ-12</td><td>9,67M</td><td>66,32</td><td>88,60</td><td>52,64</td><td>88,30</td><td>76,90</td></tr>
+    <tr class="me"><td>AdaSLQ (① + ② + ④ + ③)</td><td>10,59M</td><td>69,64</td><td>90,30</td><td>54,38</td><td>91,00</td><td>78,86</td></tr>
+   </table>
+   <p class="mute" style="font-size:12px;margin-top:8px">Mỗi dòng "Chỉ …" là một thí nghiệm riêng so với SLQ tái lập, không cộng dồn.</p>
+  </div>
+  <div class="cols c4 rv" style="margin-top:18px">
+   <div class="card stat"><div class="big g" data-count="9.5" data-dec="1" data-pre="+">0</div><div class="lbl">COCO I→T R@1 so với SLQ tái lập</div></div>
+   <div class="card stat"><div class="big g" data-count="6.6" data-dec="1" data-pre="+">0</div><div class="lbl">COCO T→I R@1 so với SLQ tái lập</div></div>
+   <div class="card stat"><div class="big g" data-count="6.6" data-dec="1" data-pre="+">0</div><div class="lbl">Flickr I→T R@1 so với SLQ tái lập</div></div>
+   <div class="card stat"><div class="big am" data-count="537" data-suf="×">0</div><div class="lbl">Số tham số so với SLQ</div></div>
+  </div>
+ </div>
+</section>
+
+<!-- 18. PHẢN BIỆN -->
+<section class="slide">
+ <div class="inner">
+  <div class="tag rv">17 · Đánh giá phản biện</div>
+  <h2 class="rv">Những điều <span class="g">cần nói rõ</span></h2>
+  <div class="cols c2">
+   <div class="card rv"><h3 class="am">⚖️ Đánh đổi tham số</h3><p>AdaSLQ học <b>10,59M</b> tham số, gấp ~537 lần SLQ và nhiều hơn cả LoRA bản 1B (4,4M). Backbone vẫn đóng băng nên không gây quên kiến thức, nhưng lợi thế "chỉ vài chục nghìn tham số" không còn. LQI-12 là cải tiến <b>không tốn thêm tham số</b> mà vẫn tăng +3,3 điểm.</p></div>
+   <div class="card rv"><h3 class="pk">🎲 Độ tin cậy thống kê</h3><p>Mỗi cấu hình mới chạy <b>1 seed</b>. Cấu hình tốt nhất được chọn dựa trên chính tập test, không có tập validation riêng. Nhiều chênh lệch chỉ 0,1–0,5 điểm (ví dụ các tầng 8, 12, 16), chưa đủ để kết luận tầng nào tốt hơn.</p></div>
+   <div class="card rv"><h3 class="hl">📦 Dữ liệu</h3><p>COCO 2017 train lấy phần lớn ảnh từ COCO 2014 val, nên có thể <b>trùng ảnh</b> với COCO 5K test. Nhóm chưa lọc ảnh trùng. Flickr30K không bị ảnh hưởng.</p></div>
+   <div class="card rv"><h3 class="lm">🧪 Dữ liệu ít thì không lợi</h3><p>Thử multi-layer + MLP head trên Kaggle (20k cặp) cho Flickr I→T R@1 = <b>72,7</b>, thấp hơn SLQ thường (75,7). Head lớn cần đủ dữ liệu mới phát huy.</p></div>
+  </div>
+ </div>
+</section>
+
+<!-- 19. KẾT LUẬN -->
+<section class="slide">
+ <div class="inner">
+  <div class="tag rv">18 · Kết luận</div>
   <h2 class="rv">Tổng kết &amp; <span class="g">hướng phát triển</span></h2>
   <div class="cols c3">
-   <div class="card rv"><h3 class="lm">✔ Đã làm được</h3><ul class="clean"><li>Phân tích phương pháp SLQ và KARR-Bench</li><li>Sửa code gốc, tái hiện trên GPU miễn phí</li><li>Flickr T→I R@5 = <b>89,9</b>, đạt 96,7% bài báo</li></ul></div>
-   <div class="card rv"><h3 class="am">⚠ Hạn chế</h3><ul class="clean"><li>Chưa đánh giá KARR-Bench (chưa công bố)</li><li>Train ít dữ liệu, batch nhỏ</li><li>Chỉ thử bản 1B</li><li>Theo tác giả: đóng băng backbone khó thích nghi với miền dữ liệu lạ (y tế, vệ tinh)</li></ul></div>
-   <div class="card rv"><h3 class="hl">➜ Hướng tiếp theo</h3><ul class="clean"><li>Train toàn bộ COCO, nhiều epoch hơn</li><li>Ablation số query N trên dữ liệu của nhóm</li><li>Thử trên dataset tiếng Việt (UIT-ViIC, KTVIC)</li></ul></div>
+   <div class="card rv"><h3 class="lm">✔ Đã làm được</h3><ul class="clean"><li>Phân tích SLQ và KARR-Bench</li><li>Sửa code gốc, tái hiện trên T4 và A100</li><li>Đợt 2 đạt 97–99% kết quả bài báo</li><li>Đề xuất AdaSLQ: COCO I→T R@1 69,64 (+9,5 so với SLQ tái lập)</li></ul></div>
+   <div class="card rv"><h3 class="am">⚠ Hạn chế</h3><ul class="clean"><li>Chưa có KARR-Bench (chưa công bố)</li><li>1 seed, chọn cấu hình trên tập test</li><li>Có thể trùng ảnh COCO train/test</li><li>AdaSLQ cần 10,59M tham số</li></ul></div>
+   <div class="card rv"><h3 class="hl">➜ Hướng tiếp theo</h3><ul class="clean"><li>Tách tập validation, chạy 3+ seed</li><li>Lọc ảnh trùng, dùng Karpathy split</li><li>Thu nhỏ bộ sinh query thích ứng</li><li>Thử trên dữ liệu tiếng Việt (UIT-ViIC, KTVIC)</li></ul></div>
   </div>
  </div>
 </section>
@@ -512,7 +589,7 @@ L = ½ (L<sub>I2T</sub> + L<sub>T2I</sub>)</pre>
 </main>
 
 <div id="hint">← → / Space để chuyển slide · F toàn màn hình</div>
-<div id="hud"><button id="prevBtn" aria-label="Slide trước">←</button><span id="count">1 / 17</span><button id="nextBtn" aria-label="Slide sau">→</button></div>
+<div id="hud"><button id="prevBtn" aria-label="Slide trước">←</button><span id="count">1 / 20</span><button id="nextBtn" aria-label="Slide sau">→</button></div>
 
 <script>
 (() => {
@@ -537,8 +614,9 @@ L = ½ (L<sub>I2T</sub> + L<sub>T2I</sub>)</pre>
     });
     slide.querySelectorAll('[data-bars]').forEach(box => {
       const fills = box.querySelectorAll('.fill');
-      const max = box.closest('#karr') ? 20 : (Math.max(...[...fills].map(f => +f.dataset.w)) > 25 ? 100 : 20);
-      fills.forEach((f, i) => { f.style.width = '0'; setTimeout(() => f.style.width = (+f.dataset.w / max * 100) + '%', 250 + i * 90); });
+      const max = Math.max(...[...fills].map(f => +f.dataset.w)) > 25 ? 100 : 20;
+      const [lo, hi] = box.dataset.range ? box.dataset.range.split(',').map(Number) : [0, max];
+      fills.forEach((f, i) => { f.style.width = '0'; setTimeout(() => f.style.width = Math.max(2, (+f.dataset.w - lo) / (hi - lo) * 100) + '%', 250 + i * 90); });
     });
     if (slide.querySelector('#nchart')) drawChart();
     if (slide.querySelector('#losschart')) drawLoss();
