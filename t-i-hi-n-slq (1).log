@@ -1,0 +1,163 @@
+6.6s 1 0.00s - Debugger warning: It seems that frozen modules are being used, which may
+6.6s 2 0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+6.6s 3 0.00s - to python to disable frozen modules.
+6.6s 4 0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+7.2s 5 0.00s - Debugger warning: It seems that frozen modules are being used, which may
+7.2s 6 0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+7.2s 7 0.00s - to python to disable frozen modules.
+7.2s 8 0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+11.7s 9 [?25l   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m0.0/10.4 MB[0m [31m?[0m eta [36m-:--:--[0m[2K   [91m━━[0m[91m╸[0m[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m0.7/10.4 MB[0m [31m20.7 MB/s[0m eta [36m0:00:01[0m[2K   [91m━━━━━━━━━━━━━━━━━━━[0m[91m╸[0m[90m━━━━━━━━━━━━━━━━━━━━[0m [32m5.1/10.4 MB[0m [31m74.8 MB/s[0m eta [36m0:00:01[0m[2K   [91m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m[91m╸[0m [32m10.4/10.4 MB[0m [31m125.8 MB/s[0m eta [36m0:00:01[0m[2K   [91m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m[91m╸[0m [32m10.4/10.4 MB[0m [31m125.8 MB/s[0m eta [36m0:00:01[0m[2K   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m10.4/10.4 MB[0m [31m79.7 MB/s[0m eta [36m0:00:00[0m
+11.7s 10 [?25h[?25l   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m0.0/566.4 kB[0m [31m?[0m eta [36m-:--:--[0m[2K   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m566.4/566.4 kB[0m [31m27.5 MB/s[0m eta [36m0:00:00[0m
+11.8s 11 [?25h[?25l   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m0.0/3.1 MB[0m [31m?[0m eta [36m-:--:--[0m[2K   [91m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m[91m╸[0m [32m3.1/3.1 MB[0m [31m218.7 MB/s[0m eta [36m0:00:01[0m[2K   [90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m [32m3.1/3.1 MB[0m [31m87.0 MB/s[0m eta [36m0:00:00[0m
+25.8s 12 [?25h[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+25.8s 13 gradio 6.26.0 requires huggingface-hub<2.0,>=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.
+25.8s 14 diffusers 0.40.0 requires huggingface-hub<2.0,>=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.[0m[31m
+31.5s 15 [0mGPU: Tesla T4
+31.5s 16 Writing slq.py
+385.0s 17 ['/kaggle/input/datasets/awsaf49/coco-2017-dataset/coco2017/annotations/captions_train2017.json']
+458.4s 18 ['/kaggle/input/datasets/awsaf49/coco-2017-dataset/coco2017/train2017']
+460.3s 19 dtype: torch.float32
+463.8s 20 config.json: 0.00B [00:00, ?B/s]config.json: 6.33kB [00:00, 26.1MB/s]
+464.0s 21 configuration_internvl_chat.py: 0.00B [00:00, ?B/s]configuration_internvl_chat.py: 4.04kB [00:00, 20.9MB/s]
+464.1s 22 configuration_intern_vit.py: 0.00B [00:00, ?B/s]configuration_intern_vit.py: 5.55kB [00:00, 30.7MB/s]
+464.1s 23 A new version of the following files was downloaded from https://huggingface.co/OpenGVLab/InternVL3-1B:
+464.1s 24 - configuration_intern_vit.py
+464.1s 25 . Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+464.1s 26 A new version of the following files was downloaded from https://huggingface.co/OpenGVLab/InternVL3-1B:
+464.1s 27 - configuration_internvl_chat.py
+464.1s 28 - configuration_intern_vit.py
+464.1s 29 . Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+473.4s 30 modeling_internvl_chat.py: 0.00B [00:00, ?B/s]modeling_internvl_chat.py: 16.0kB [00:00, 39.4MB/s]
+473.5s 31 conversation.py: 0.00B [00:00, ?B/s]conversation.py: 15.3kB [00:00, 37.6MB/s]
+473.5s 32 A new version of the following files was downloaded from https://huggingface.co/OpenGVLab/InternVL3-1B:
+473.5s 33 - conversation.py
+473.5s 34 . Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+473.6s 35 modeling_intern_vit.py: 0.00B [00:00, ?B/s]modeling_intern_vit.py: 18.1kB [00:00, 53.2MB/s]
+473.7s 36 A new version of the following files was downloaded from https://huggingface.co/OpenGVLab/InternVL3-1B:
+473.7s 37 - modeling_intern_vit.py
+473.7s 38 . Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+473.7s 39 A new version of the following files was downloaded from https://huggingface.co/OpenGVLab/InternVL3-1B:
+473.7s 40 - modeling_internvl_chat.py
+473.7s 41 - conversation.py
+473.7s 42 - modeling_intern_vit.py
+473.7s 43 . Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+491.0s 44 FlashAttention2 is not installed.
+496.9s 45 model.safetensors:   0%|                            | 0.00/1.88G [00:00<?, ?B/s]model.safetensors:   0%|                            | 0.00/1.88G [00:00<?, ?B/s]model.safetensors:   7%|█▌                   | 134M/1.88G [00:01<00:16, 107MB/s]model.safetensors:  14%|███                  | 268M/1.88G [00:01<00:07, 203MB/s]model.safetensors:  25%|█████▎               | 470M/1.88G [00:02<00:05, 280MB/s]model.safetensors:  34%|███████              | 630M/1.88G [00:02<00:03, 359MB/s]model.safetensors:  55%|██████████▉         | 1.02G/1.88G [00:03<00:01, 437MB/s]model.safetensors:  64%|████████████▊       | 1.21G/1.88G [00:03<00:01, 417MB/s]model.safetensors:  79%|███████████████▋    | 1.48G/1.88G [00:04<00:00, 453MB/s]model.safetensors:  82%|████████████████▍   | 1.54G/1.88G [00:04<00:00, 421MB/s]model.safetensors: 100%|████████████████████| 1.88G/1.88G [00:04<00:00, 609MB/s]model.safetensors: 100%|████████████████████| 1.88G/1.88G [00:05<00:00, 326MB/s]
+498.8s 46 generation_config.json:   0%|                        | 0.00/69.0 [00:00<?, ?B/s]generation_config.json: 100%|█████████████████| 69.0/69.0 [00:00<00:00, 431kB/s]
+506.2s 47 tokenizer_config.json: 0.00B [00:00, ?B/s]tokenizer_config.json: 7.33kB [00:00, 27.7MB/s]
+506.4s 48 vocab.json: 0.00B [00:00, ?B/s]vocab.json: 3.38MB [00:00, 55.6MB/s]
+506.5s 49 merges.txt: 0.00B [00:00, ?B/s]merges.txt: 1.67MB [00:00, 139MB/s]
+506.6s 50 added_tokens.json:   0%|                              | 0.00/790 [00:00<?, ?B/s]added_tokens.json: 100%|███████████████████████| 790/790 [00:00<00:00, 6.86MB/s]
+506.7s 51 special_tokens_map.json:   0%|                        | 0.00/613 [00:00<?, ?B/s]special_tokens_map.json: 100%|█████████████████| 613/613 [00:00<00:00, 6.63MB/s]
+506.8s 52 tokenizer.json: 0.00B [00:00, ?B/s]tokenizer.json: 7.03MB [00:00, 192MB/s]
+507.1s 53 == flickr
+510.7s 54 TEST/test/0000.parquet:   0%|                        | 0.00/142M [00:00<?, ?B/s]TEST/test/0000.parquet:  12%|█▋             | 16.3M/142M [00:01<00:09, 13.0MB/s]TEST/test/0000.parquet:  54%|████████▏      | 76.8M/142M [00:01<00:01, 63.5MB/s]TEST/test/0000.parquet: 100%|████████████████| 142M/142M [00:01<00:00, 91.5MB/s]
+511.6s 55 Generating train split: 0 examples [00:00, ? examples/s]Generating train split: 100 examples [00:00, 733.24 examples/s]Generating train split: 500 examples [00:00, 2217.13 examples/s]Generating train split: 900 examples [00:00, 2565.54 examples/s]Generating train split: 1000 examples [00:00, 1214.48 examples/s]
+514.5s 56 1000 ảnh, 5000 caption
+580.2s 57 text: 96/5000  text: 192/5000  text: 288/5000  text: 384/5000  text: 480/5000  text: 576/5000  text: 672/5000  text: 768/5000  text: 864/5000  text: 960/5000  text: 1056/5000  text: 1152/5000  text: 1248/5000  text: 1344/5000  text: 1440/5000  text: 1536/5000  text: 1632/5000  text: 1728/5000  text: 1824/5000  text: 1920/5000  text: 2016/5000  text: 2112/5000  text: 2208/5000  text: 2304/5000  text: 2400/5000  text: 2496/5000  text: 2592/5000  text: 2688/5000  text: 2784/5000  text: 2880/5000  text: 2976/5000  text: 3072/5000  text: 3168/5000  text: 3264/5000  text: 3360/5000  text: 3456/5000  text: 3552/5000  text: 3648/5000  text: 3744/5000  text: 3840/5000  text: 3936/5000  text: 4032/5000  text: 4128/5000  text: 4224/5000  text: 4320/5000  text: 4416/5000  text: 4512/5000  text: 4608/5000  text: 4704/5000  text: 4800/5000  text: 4896/5000  text: 4992/5000  text: 5000/5000
+909.5s 58 image: 32/1000  image: 64/1000  image: 96/1000  image: 128/1000  image: 160/1000  image: 192/1000  image: 224/1000  image: 256/1000  image: 288/1000  image: 320/1000  image: 352/1000  image: 384/1000  image: 416/1000  image: 448/1000  image: 480/1000  image: 512/1000  image: 544/1000  image: 576/1000  image: 608/1000  image: 640/1000  image: 672/1000  image: 704/1000  image: 736/1000  image: 768/1000  image: 800/1000  image: 832/1000  image: 864/1000  image: 896/1000  image: 928/1000  image: 960/1000  image: 992/1000  image: 1000/1000
+909.7s 59 Image->Text R@1/5/10: 17.7 / 34.9 / 43.9
+909.7s 60 Text->Image R@1/5/10: 7.2 / 17.6 / 24.4
+909.7s 61 Đã ghi results_init.json
+916.6s 62 dtype: torch.float32
+925.8s 63 FlashAttention2 is not installed.
+1178.6s 64 COCO annotations: /kaggle/input/datasets/awsaf49/coco-2017-dataset/coco2017/annotations/captions_train2017.json | ảnh: /kaggle/input/datasets/awsaf49/coco-2017-dataset/coco2017/train2017
+1181.1s 65 Số cặp huấn luyện: 20000
+1217.9s 66 ep 0 step 1/312 loss 3.6319 tau 0.0699 lr 1.11e-04 | 0.6 phút, còn ~190.4 phút
+1486.4s 67 ep 0 step 10/312 loss 1.9764 tau 0.0669 lr 5.00e-04 | 5.0 phút, còn ~152.2 phút
+1785.8s 68 ep 0 step 20/312 loss 1.1325 tau 0.0617 lr 4.98e-04 | 10.0 phút, còn ~146.4 phút
+2086.8s 69 ep 0 step 30/312 loss 0.8679 tau 0.0563 lr 4.94e-04 | 15.0 phút, còn ~141.4 phút
+2385.3s 70 ep 0 step 40/312 loss 0.5291 tau 0.0512 lr 4.87e-04 | 20.0 phút, còn ~136.1 phút
+2684.0s 71 ep 0 step 50/312 loss 0.4615 tau 0.0463 lr 4.78e-04 | 25.0 phút, còn ~131.0 phút
+2984.1s 72 ep 0 step 60/312 loss 0.5482 tau 0.0418 lr 4.66e-04 | 30.0 phút, còn ~126.0 phút
+3283.1s 73 ep 0 step 70/312 loss 0.4396 tau 0.0376 lr 4.52e-04 | 35.0 phút, còn ~120.9 phút
+3583.5s 74 ep 0 step 80/312 loss 0.3212 tau 0.0339 lr 4.35e-04 | 40.0 phút, còn ~116.0 phút
+3883.6s 75 ep 0 step 90/312 loss 0.3209 tau 0.0309 lr 4.17e-04 | 45.0 phút, còn ~111.0 phút
+4182.8s 76 ep 0 step 100/312 loss 0.3473 tau 0.0286 lr 3.97e-04 | 50.0 phút, còn ~106.0 phút
+4483.3s 77 ep 0 step 110/312 loss 0.3285 tau 0.0264 lr 3.75e-04 | 55.0 phút, còn ~101.0 phút
+4785.0s 78 ep 0 step 120/312 loss 0.2898 tau 0.0244 lr 3.52e-04 | 60.0 phút, còn ~96.0 phút
+5085.9s 79 ep 0 step 130/312 loss 0.3992 tau 0.0239 lr 3.28e-04 | 65.0 phút, còn ~91.0 phút
+5384.4s 80 ep 0 step 140/312 loss 0.1815 tau 0.0231 lr 3.03e-04 | 70.0 phút, còn ~86.0 phút
+5683.0s 81 ep 0 step 150/312 loss 0.2917 tau 0.0224 lr 2.77e-04 | 75.0 phút, còn ~81.0 phút
+5982.3s 82 ep 0 step 160/312 loss 0.4064 tau 0.0218 lr 2.51e-04 | 80.0 phút, còn ~76.0 phút
+6281.6s 83 ep 0 step 170/312 loss 0.4771 tau 0.0219 lr 2.25e-04 | 85.0 phút, còn ~71.0 phút
+6581.7s 84 ep 0 step 180/312 loss 0.3180 tau 0.0215 lr 2.00e-04 | 90.0 phút, còn ~66.0 phút
+6882.0s 85 ep 0 step 190/312 loss 0.3300 tau 0.0212 lr 1.75e-04 | 95.0 phút, còn ~61.0 phút
+7181.0s 86 ep 0 step 200/312 loss 0.2445 tau 0.0210 lr 1.50e-04 | 99.9 phút, còn ~56.0 phút
+7480.3s 87 ep 0 step 210/312 loss 0.2372 tau 0.0209 lr 1.27e-04 | 104.9 phút, còn ~51.0 phút
+7778.6s 88 ep 0 step 220/312 loss 0.1917 tau 0.0207 lr 1.05e-04 | 109.9 phút, còn ~46.0 phút
+8077.4s 89 ep 0 step 230/312 loss 0.3432 tau 0.0207 lr 8.50e-05 | 114.9 phút, còn ~41.0 phút
+8376.4s 90 ep 0 step 240/312 loss 0.3629 tau 0.0207 lr 6.65e-05 | 119.9 phút, còn ~36.0 phút
+8674.8s 91 ep 0 step 250/312 loss 0.3253 tau 0.0208 lr 4.99e-05 | 124.8 phút, còn ~31.0 phút
+8973.7s 92 ep 0 step 260/312 loss 0.3452 tau 0.0209 lr 3.55e-05 | 129.8 phút, còn ~26.0 phút
+9272.1s 93 ep 0 step 270/312 loss 0.4353 tau 0.0209 lr 2.33e-05 | 134.8 phút, còn ~21.0 phút
+9573.0s 94 ep 0 step 280/312 loss 0.4025 tau 0.0208 lr 1.36e-05 | 139.8 phút, còn ~16.0 phút
+9874.9s 95 ep 0 step 290/312 loss 0.1573 tau 0.0208 lr 6.48e-06 | 144.8 phút, còn ~11.0 phút
+10173.2s 96 ep 0 step 300/312 loss 0.2583 tau 0.0207 lr 1.93e-06 | 149.8 phút, còn ~6.0 phút
+10473.3s 97 ep 0 step 310/312 loss 0.2733 tau 0.0207 lr 5.37e-08 | 154.8 phút, còn ~1.0 phút
+10532.8s 98 Đã lưu slq_q20.pt. Số tham số huấn luyện: 17,921
+10537.9s 99 dtype: torch.float32
+10547.0s 100 FlashAttention2 is not installed.
+10550.3s 101 == flickr
+10554.0s 102 1000 ảnh, 5000 caption
+10628.6s 103 text: 96/5000  text: 192/5000  text: 288/5000  text: 384/5000  text: 480/5000  text: 576/5000  text: 672/5000  text: 768/5000  text: 864/5000  text: 960/5000  text: 1056/5000  text: 1152/5000  text: 1248/5000  text: 1344/5000  text: 1440/5000  text: 1536/5000  text: 1632/5000  text: 1728/5000  text: 1824/5000  text: 1920/5000  text: 2016/5000  text: 2112/5000  text: 2208/5000  text: 2304/5000  text: 2400/5000  text: 2496/5000  text: 2592/5000  text: 2688/5000  text: 2784/5000  text: 2880/5000  text: 2976/5000  text: 3072/5000  text: 3168/5000  text: 3264/5000  text: 3360/5000  text: 3456/5000  text: 3552/5000  text: 3648/5000  text: 3744/5000  text: 3840/5000  text: 3936/5000  text: 4032/5000  text: 4128/5000  text: 4224/5000  text: 4320/5000  text: 4416/5000  text: 4512/5000  text: 4608/5000  text: 4704/5000  text: 4800/5000  text: 4896/5000  text: 4992/5000  text: 5000/5000
+10957.6s 104 image: 32/1000  image: 64/1000  image: 96/1000  image: 128/1000  image: 160/1000  image: 192/1000  image: 224/1000  image: 256/1000  image: 288/1000  image: 320/1000  image: 352/1000  image: 384/1000  image: 416/1000  image: 448/1000  image: 480/1000  image: 512/1000  image: 544/1000  image: 576/1000  image: 608/1000  image: 640/1000  image: 672/1000  image: 704/1000  image: 736/1000  image: 768/1000  image: 800/1000  image: 832/1000  image: 864/1000  image: 896/1000  image: 928/1000  image: 960/1000  image: 992/1000  image: 1000/1000
+10957.8s 105 Image->Text R@1/5/10: 75.7 / 94.1 / 98.5
+10957.8s 106 Text->Image R@1/5/10: 69.0 / 89.9 / 93.7
+10957.8s 107 == coco
+10966.4s 108 TEST/test/0000.parquet:   0%|                        | 0.00/510M [00:00<?, ?B/s]TEST/test/0000.parquet:   0%|                        | 0.00/510M [00:00<?, ?B/s]TEST/test/0000.parquet:   1%|▏              | 4.74M/510M [00:02<03:06, 2.71MB/s]TEST/test/0000.parquet:   1%|▏              | 6.39M/510M [00:02<03:20, 2.52MB/s]TEST/test/0000.parquet:  13%|██             | 68.6M/510M [00:03<00:10, 40.2MB/s]TEST/test/0000.parquet:  20%|███▏            | 100M/510M [00:03<00:08, 47.3MB/s]TEST/test/0000.parquet:  23%|███▊            | 120M/510M [00:03<00:07, 52.6MB/s]TEST/test/0000.parquet:  26%|████            | 130M/510M [00:04<00:07, 50.4MB/s]TEST/test/0000.parquet:  34%|█████▍          | 173M/510M [00:04<00:05, 63.6MB/s]TEST/test/0000.parquet:  38%|██████          | 195M/510M [00:04<00:04, 68.2MB/s]TEST/test/0000.parquet:  40%|██████▍         | 205M/510M [00:05<00:04, 62.4MB/s]TEST/test/0000.parquet:  50%|████████        | 256M/510M [00:05<00:03, 77.8MB/s]TEST/test/0000.parquet:  54%|████████▌       | 274M/510M [00:06<00:03, 62.5MB/s]TEST/test/0000.parquet:  66%|███████████▏     | 337M/510M [00:06<00:01, 102MB/s]TEST/test/0000.parquet:  81%|████████████▉   | 411M/510M [00:07<00:01, 86.6MB/s]TEST/test/0000.parquet:  94%|███████████████▉ | 479M/510M [00:07<00:00, 101MB/s]TEST/test/0000.parquet: 100%|█████████████████| 510M/510M [00:07<00:00, 111MB/s]TEST/test/0000.parquet: 100%|████████████████| 510M/510M [00:07<00:00, 64.3MB/s]
+10970.4s 109 TEST/test/0001.parquet:   0%|                        | 0.00/311M [00:00<?, ?B/s]TEST/test/0001.parquet:  10%|█▍             | 30.2M/311M [00:01<00:14, 19.9MB/s]TEST/test/0001.parquet:  17%|██▌            | 53.9M/311M [00:01<00:07, 34.2MB/s]TEST/test/0001.parquet:  22%|███▎           | 69.3M/311M [00:02<00:06, 40.1MB/s]TEST/test/0001.parquet:  45%|███████         | 138M/311M [00:02<00:01, 95.2MB/s]TEST/test/0001.parquet:  72%|████████████▏    | 223M/311M [00:02<00:00, 125MB/s]TEST/test/0001.parquet:  82%|██████████████   | 256M/311M [00:03<00:00, 126MB/s]TEST/test/0001.parquet:  89%|███████████████▏ | 276M/311M [00:03<00:00, 116MB/s]TEST/test/0001.parquet: 100%|████████████████| 311M/311M [00:03<00:00, 81.6MB/s]TEST/test/0001.parquet: 100%|████████████████| 311M/311M [00:03<00:00, 77.9MB/s]
+10972.0s 110 Generating train split: 0 examples [00:00, ? examples/s]Generating train split: 100 examples [00:00, 623.61 examples/s]Generating train split: 500 examples [00:00, 1952.86 examples/s]Generating train split: 900 examples [00:00, 2410.07 examples/s]Generating train split: 1300 examples [00:00, 2752.81 examples/s]Generating train split: 1600 examples [00:00, 2693.35 examples/s]Generating train split: 2100 examples [00:00, 3053.47 examples/s]Generating train split: 2500 examples [00:00, 3140.49 examples/s]Generating train split: 3000 examples [00:01, 2996.58 examples/s]Generating train split: 3500 examples [00:01, 3029.17 examples/s]Generating train split: 4100 examples [00:01, 3542.01 examples/s]Generating train split: 4700 examples [00:01, 3892.46 examples/s]Generating train split: 5000 examples [00:01, 3227.34 examples/s]
+10992.3s 111 5000 ảnh, 25000 caption
+11300.0s 112 text: 96/25000  text: 192/25000  text: 288/25000  text: 384/25000  text: 480/25000  text: 576/25000  text: 672/25000  text: 768/25000  text: 864/25000  text: 960/25000  text: 1056/25000  text: 1152/25000  text: 1248/25000  text: 1344/25000  text: 1440/25000  text: 1536/25000  text: 1632/25000  text: 1728/25000  text: 1824/25000  text: 1920/25000  text: 2016/25000  text: 2112/25000  text: 2208/25000  text: 2304/25000  text: 2400/25000  text: 2496/25000  text: 2592/25000  text: 2688/25000  text: 2784/25000  text: 2880/25000  text: 2976/25000  text: 3072/25000  text: 3168/25000  text: 3264/25000  text: 3360/25000  text: 3456/25000  text: 3552/25000  text: 3648/25000  text: 3744/25000  text: 3840/25000  text: 3936/25000  text: 4032/25000  text: 4128/25000  text: 4224/25000  text: 4320/25000  text: 4416/25000  text: 4512/25000  text: 4608/25000  text: 4704/25000  text: 4800/25000  text: 4896/25000  text: 4992/25000  text: 5088/25000  text: 5184/25000  text: 5280/25000  text: 5376/25000  text: 5472/25000  text: 5568/25000  text: 5664/25000  text: 5760/25000  text: 5856/25000  text: 5952/25000  text: 6048/25000  text: 6144/25000  text: 6240/25000  text: 6336/25000  text: 6432/25000  text: 6528/25000  text: 6624/25000  text: 6720/25000  text: 6816/25000  text: 6912/25000  text: 7008/25000  text: 7104/25000  text: 7200/25000  text: 7296/25000  text: 7392/25000  text: 7488/25000  text: 7584/25000  text: 7680/25000  text: 7776/25000  text: 7872/25000  text: 7968/25000  text: 8064/25000  text: 8160/25000  text: 8256/25000  text: 8352/25000  text: 8448/25000  text: 8544/25000  text: 8640/25000  text: 8736/25000  text: 8832/25000  text: 8928/25000  text: 9024/25000  text: 9120/25000  text: 9216/25000  text: 9312/25000  text: 9408/25000  text: 9504/25000  text: 9600/25000  text: 9696/25000  text: 9792/25000  text: 9888/25000  text: 9984/25000  text: 10080/25000  text: 10176/25000  text: 10272/25000  text: 10368/25000  text: 10464/25000  text: 10560/25000  text: 10656/25000  text: 10752/25000  text: 10848/25000  text: 10944/25000  text: 11040/25000  text: 11136/25000  text: 11232/25000  text: 11328/25000  text: 11424/25000  text: 11520/25000  text: 11616/25000  text: 11712/25000  text: 11808/25000  text: 11904/25000  text: 12000/25000  text: 12096/25000  text: 12192/25000  text: 12288/25000  text: 12384/25000  text: 12480/25000  text: 12576/25000  text: 12672/25000  text: 12768/25000  text: 12864/25000  text: 12960/25000  text: 13056/25000  text: 13152/25000  text: 13248/25000  text: 13344/25000  text: 13440/25000  text: 13536/25000  text: 13632/25000  text: 13728/25000  text: 13824/25000  text: 13920/25000  text: 14016/25000  text: 14112/25000  text: 14208/25000  text: 14304/25000  text: 14400/25000  text: 14496/25000  text: 14592/25000  text: 14688/25000  text: 14784/25000  text: 14880/25000  text: 14976/25000  text: 15072/25000  text: 15168/25000  text: 15264/25000  text: 15360/25000  text: 15456/25000  text: 15552/25000  text: 15648/25000  text: 15744/25000  text: 15840/25000  text: 15936/25000  text: 16032/25000  text: 16128/25000  text: 16224/25000  text: 16320/25000  text: 16416/25000  text: 16512/25000  text: 16608/25000  text: 16704/25000  text: 16800/25000  text: 16896/25000  text: 16992/25000  text: 17088/25000  text: 17184/25000  text: 17280/25000  text: 17376/25000  text: 17472/25000  text: 17568/25000  text: 17664/25000  text: 17760/25000  text: 17856/25000  text: 17952/25000  text: 18048/25000  text: 18144/25000  text: 18240/25000  text: 18336/25000  text: 18432/25000  text: 18528/25000  text: 18624/25000  text: 18720/25000  text: 18816/25000  text: 18912/25000  text: 19008/25000  text: 19104/25000  text: 19200/25000  text: 19296/25000  text: 19392/25000  text: 19488/25000  text: 19584/25000  text: 19680/25000  text: 19776/25000  text: 19872/25000  text: 19968/25000  text: 20064/25000  text: 20160/25000  text: 20256/25000  text: 20352/25000  text: 20448/25000  text: 20544/25000  text: 20640/25000  text: 20736/25000  text: 20832/25000  text: 20928/25000  text: 21024/25000  text: 21120/25000  text: 21216/25000  text: 21312/25000  text: 21408/25000  text: 21504/25000  text: 21600/25000  text: 21696/25000  text: 21792/25000  text: 21888/25000  text: 21984/25000  text: 22080/25000  text: 22176/25000  text: 22272/25000  text: 22368/25000  text: 22464/25000  text: 22560/25000  text: 22656/25000  text: 22752/25000  text: 22848/25000  text: 22944/25000  text: 23040/25000  text: 23136/25000  text: 23232/25000  text: 23328/25000  text: 23424/25000  text: 23520/25000  text: 23616/25000  text: 23712/25000  text: 23808/25000  text: 23904/25000  text: 24000/25000  text: 24096/25000  text: 24192/25000  text: 24288/25000  text: 24384/25000  text: 24480/25000  text: 24576/25000  text: 24672/25000  text: 24768/25000  text: 24864/25000  text: 24960/25000  text: 25000/25000
+12953.7s 113 image: 32/5000  image: 64/5000  image: 96/5000  image: 128/5000  image: 160/5000  image: 192/5000  image: 224/5000  image: 256/5000  image: 288/5000  image: 320/5000  image: 352/5000  image: 384/5000  image: 416/5000  image: 448/5000  image: 480/5000  image: 512/5000  image: 544/5000  image: 576/5000  image: 608/5000  image: 640/5000  image: 672/5000  image: 704/5000  image: 736/5000  image: 768/5000  image: 800/5000  image: 832/5000  image: 864/5000  image: 896/5000  image: 928/5000  image: 960/5000  image: 992/5000  image: 1024/5000  image: 1056/5000  image: 1088/5000  image: 1120/5000  image: 1152/5000  image: 1184/5000  image: 1216/5000  image: 1248/5000  image: 1280/5000  image: 1312/5000  image: 1344/5000  image: 1376/5000  image: 1408/5000  image: 1440/5000  image: 1472/5000  image: 1504/5000  image: 1536/5000  image: 1568/5000  image: 1600/5000  image: 1632/5000  image: 1664/5000  image: 1696/5000  image: 1728/5000  image: 1760/5000  image: 1792/5000  image: 1824/5000  image: 1856/5000  image: 1888/5000  image: 1920/5000  image: 1952/5000  image: 1984/5000  image: 2016/5000  image: 2048/5000  image: 2080/5000  image: 2112/5000  image: 2144/5000  image: 2176/5000  image: 2208/5000  image: 2240/5000  image: 2272/5000  image: 2304/5000  image: 2336/5000  image: 2368/5000  image: 2400/5000  image: 2432/5000  image: 2464/5000  image: 2496/5000  image: 2528/5000  image: 2560/5000  image: 2592/5000  image: 2624/5000  image: 2656/5000  image: 2688/5000  image: 2720/5000  image: 2752/5000  image: 2784/5000  image: 2816/5000  image: 2848/5000  image: 2880/5000  image: 2912/5000  image: 2944/5000  image: 2976/5000  image: 3008/5000  image: 3040/5000  image: 3072/5000  image: 3104/5000  image: 3136/5000  image: 3168/5000  image: 3200/5000  image: 3232/5000  image: 3264/5000  image: 3296/5000  image: 3328/5000  image: 3360/5000  image: 3392/5000  image: 3424/5000  image: 3456/5000  image: 3488/5000  image: 3520/5000  image: 3552/5000  image: 3584/5000  image: 3616/5000  image: 3648/5000  image: 3680/5000  image: 3712/5000  image: 3744/5000  image: 3776/5000  image: 3808/5000  image: 3840/5000  image: 3872/5000  image: 3904/5000  image: 3936/5000  image: 3968/5000  image: 4000/5000  image: 4032/5000  image: 4064/5000  image: 4096/5000  image: 4128/5000  image: 4160/5000  image: 4192/5000  image: 4224/5000  image: 4256/5000  image: 4288/5000  image: 4320/5000  image: 4352/5000  image: 4384/5000  image: 4416/5000  image: 4448/5000  image: 4480/5000  image: 4512/5000  image: 4544/5000  image: 4576/5000  image: 4608/5000  image: 4640/5000  image: 4672/5000  image: 4704/5000  image: 4736/5000  image: 4768/5000  image: 4800/5000  image: 4832/5000  image: 4864/5000  image: 4896/5000  image: 4928/5000  image: 4960/5000  image: 4992/5000  image: 5000/5000
+12958.2s 114 Image->Text R@1/5/10: 50.9 / 76.8 / 86.3
+12958.2s 115 Text->Image R@1/5/10: 42.1 / 68.4 / 77.9
+12958.2s 116 Đã ghi results_slq_q20.json
+12961.5s 117 {
+12961.5s 118 "flickr": {
+12961.5s 119 "T2I": {
+12961.5s 120 "1": 7.159999758005142,
+12961.5s 121 "5": 17.640000581741333,
+12961.5s 122 "10": 24.43999946117401
+12961.5s 123 },
+12961.5s 124 "I2T": {
+12961.5s 125 "1": 17.70000010728836,
+12961.5s 126 "5": 34.90000069141388,
+12961.5s 127 "10": 43.90000104904175
+12961.5s 128 }
+12961.5s 129 }
+12961.5s 130 }{
+12961.5s 131 "flickr": {
+12961.5s 132 "T2I": {
+12961.5s 133 "1": 68.98000240325928,
+12961.5s 134 "5": 89.85999822616577,
+12961.5s 135 "10": 93.69999766349792
+12961.5s 136 },
+12961.5s 137 "I2T": {
+12961.5s 138 "1": 75.70000290870667,
+12961.5s 139 "5": 94.0999984741211,
+12961.5s 140 "10": 98.50000143051147
+12961.5s 141 }
+12961.5s 142 },
+12961.5s 143 "coco": {
+12961.5s 144 "T2I": {
+12961.5s 145 "1": 42.11199879646301,
+12961.5s 146 "5": 68.36400032043457,
+12961.5s 147 "10": 77.89599895477295
+12961.5s 148 },
+12961.5s 149 "I2T": {
+12961.5s 150 "1": 50.90000033378601,
+12961.5s 151 "5": 76.84000134468079,
+12961.5s 152 "10": 86.28000020980835
+12961.5s 153 }
+12961.5s 154 }
+12964.6s 155 /usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\|'
+12964.6s 156 cells[i][c] = re.sub('\\\\\|', '|', cell)
+12964.7s 157 /usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\_'
+12964.7s 158 text = re.sub(r'_', '\_', text) # Escape underscores in display text
+12965.6s 159 [NbConvertApp] Converting notebook __notebook__.ipynb to notebook
+12965.8s 160 [NbConvertApp] Writing 39473 bytes to __notebook__.ipynb
+12968.3s 161 [NbConvertApp] Converting notebook __notebook__.ipynb to html
+12968.9s 162 [NbConvertApp] Writing 377023 bytes to __results__.html
+12969.6s 163 }
