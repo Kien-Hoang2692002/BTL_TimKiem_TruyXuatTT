@@ -81,10 +81,10 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   <a href="cau_hoi_QA.html" >Hỏi đáp</a>
  </nav>
 </div></header>
-<div class="wrap"><aside><div class="lbl">Mục lục</div><a href="#s1">1. Trang bìa</a><a href="#s2">2. Bài toán truy xuất đa phương thức</a><a href="#s3">3. Động lực</a><a href="#s4">4. Thí nghiệm thăm dò</a><a href="#s5">5. Kiến trúc SLQ</a><a href="#s6">6. Vì sao đặt query ở cuối?</a><a href="#s7">7. KARR-Bench</a><a href="#s8">8. Kết quả trong bài báo</a><a href="#s9">9. Ablation, chọn N = 20</a><a href="#s10">10. Hai đợt tái hiện</a><a href="#s11">11. Lỗi khi tái hiện</a><a href="#s12">12. Huấn luyện Đợt 1 (Kaggle T4)</a><a href="#s13">13. Kết quả tái hiện</a><a href="#s14">14. Bốn hướng cải tiến</a><a href="#s15">15. Ablation vị trí query</a><a href="#s16">16. Ablation trích xuất và thích ứng</a><a href="#s17">17. AdaSLQ</a><a href="#s18">18. Đánh giá phản biện</a><a href="#s19">19. Kết luận</a><a href="#s20">20. Cảm ơn và hỏi đáp</a><a href="#p20">Phân công gợi ý</a></aside><main>
+<div class="wrap"><aside><div class="lbl">Mục lục</div><a href="#s1">1. Trang bìa</a><a href="#s2">2. Bài toán truy xuất đa phương thức</a><a href="#s3">3. Động lực</a><a href="#s4">4. Thí nghiệm thăm dò</a><a href="#s5">5. Kiến trúc SLQ</a><a href="#s6">6. Vì sao đặt query ở cuối?</a><a href="#s7">7. KARR-Bench</a><a href="#s8">8. Kết quả trong bài báo</a><a href="#s9">9. Ablation, chọn N = 20</a><a href="#s10">10. Thiết lập tái hiện</a><a href="#s11">11. Kết quả tái hiện</a><a href="#s12">12. Bốn hướng cải tiến</a><a href="#s13">13. Ablation vị trí query</a><a href="#s14">14. Ablation trích xuất và thích ứng</a><a href="#s15">15. AdaSLQ</a><a href="#s16">16. Đánh giá phản biện</a><a href="#s17">17. Kết luận</a><a href="#s18">18. Cảm ơn và hỏi đáp</a><a href="#p18">Phân công gợi ý</a></aside><main>
 <h1>Kịch bản thuyết trình: SLQ và AdaSLQ</h1><div class="intro"><ul>
-<li><strong>Slide:</strong> <code>bao_cao_SLQ.html</code>, 20 slide, gồm 3 phần: bài báo (1–9), tái hiện (10–13), cải tiến của nhóm (14–19).</li>
-<li><strong>Thời lượng gợi ý:</strong> 20–22 phút trình bày và 5–10 phút hỏi đáp</li>
+<li><strong>Slide:</strong> <code>bao_cao_SLQ.html</code>, 18 slide, gồm 3 phần: bài báo (1–9), tái hiện (10–11), cải tiến của nhóm (12–17).</li>
+<li><strong>Thời lượng gợi ý:</strong> 18–20 phút trình bày và 5–10 phút hỏi đáp</li>
 <li><strong>Điều khiển:</strong> phím ← → hoặc Space để chuyển slide, phím F để bật toàn màn hình</li>
 <li><strong>Phân công gợi ý:</strong> 5 người (xem bảng cuối file). Nhóm tự chỉnh lại cho phù hợp.</li>
 </ul>
@@ -153,42 +153,31 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <p>Kết quả tốt nhất ở 20 query; 32 query thì giảm vì dư thừa. Query dùng chung tốt hơn query riêng cho từng phương thức. Mean pooling tốt nhất.</p>
 </blockquote>
 <p><strong>Chuyển ý:</strong> "Đó là bài báo. Phần tiếp theo là nhóm em tái hiện lại."</p></section>
-<section class="card" id="s10"><h2><span class="num">SLIDE 10</span>Hai đợt tái hiện<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<section class="card" id="s10"><h2><span class="num">SLIDE 10</span>Thiết lập tái hiện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
-<li>Đợt 1 trên Kaggle T4: 20k cặp, 1 epoch, fp32, nhằm chạy được và sửa lỗi.</li>
-<li>Đợt 2 trên 4× A100: toàn bộ COCO, 5 epoch, bf16, đúng cấu hình bài báo.</li>
-<li>Mô hình học 17.921 tham số, hoặc 19,7K khi có thêm LayerNorm.</li>
+<li>Chạy đúng cấu hình bài báo: toàn bộ COCO, 5 epoch, bf16, 4× A100, 1024 mẫu âm.</li>
+<li>Mô hình học 17.921 tham số (19,7K khi có thêm LayerNorm). Bài báo ghi ~36K.</li>
+<li>Code gốc không chạy được ngay; nhóm sửa và mở rộng thành <code>slq_multilayer.py</code>.</li>
 </ul>
 <p><strong>Lời thoại gợi ý:</strong></p>
 <blockquote>
-<p>Nhóm em tái hiện hai đợt. Đợt 1 dùng GPU T4 miễn phí của Kaggle, quy mô nhỏ, mục tiêu là chạy được và tìm lỗi. Đợt 2 dùng 4 GPU A100, chạy đúng cấu hình bài báo: toàn bộ COCO, 5 epoch, bf16. Đợt 2 vừa để so sánh công bằng với bài báo, vừa làm nền cho các cải tiến.</p>
-<p>Số tham số đo được là 17.921, tức 20 nhân 896 cộng 1. Bài báo ghi khoảng 36 nghìn, nhưng code tác giả công bố chỉ ra được khoảng 18 nghìn.</p>
+<p>Nhóm em tái hiện trên 4 GPU A100, giữ đúng cấu hình bài báo: InternVL3-1B, 20 query, toàn bộ COCO, 5 epoch, learning rate 5e-4, bf16. Mỗi GPU xử lý 256 mẫu và embedding được gom giữa 4 GPU, nên mỗi bước có 1024 mẫu âm như bài báo.</p>
+<p>Số tham số đo được là 17.921, tức 20 nhân 896 cộng 1. Bài báo ghi khoảng 36 nghìn, nhưng code công bố chỉ ra khoảng 18 nghìn.</p>
+<p>Code tác giả không chạy được ngay: thiếu package, dòng tạo query bị comment, cấu hình mặc định khác bài báo. Nhóm em viết lại giữ đúng logic gốc, sau đó mở rộng để chạy nhiều GPU và thử các cải tiến.</p>
 </blockquote>
-<p><strong>Chuyển ý:</strong> "Ngay từ Đợt 1, nhóm em đã gặp khá nhiều trục trặc."</p></section>
-<section class="card" id="s11"><h2><span class="num">SLIDE 11</span>Lỗi khi tái hiện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong> code gốc không chạy được ngay. Lỗi fp16 làm kết quả chỉ còn 0,1%.</p>
-<p><strong>Lời thoại gợi ý:</strong></p>
-<blockquote>
-<p>Code tác giả import một package không có trong repo, dòng tạo query bị comment, và cấu hình mặc định khác bài báo. Nhóm em viết lại một script giữ đúng logic gốc.</p>
-<p>Lần chạy đầu cho kết quả <strong>0,1%</strong>, ngang đoán bừa, kể cả sau khi huấn luyện. Chuyển từ fp16 sang fp32 trên T4 thì hết lỗi. Bài học: luôn so với mức ngẫu nhiên để phát hiện lỗi. Nhóm em đã thêm bước tự kiểm tra NaN vào code.</p>
-</blockquote></section>
-<section class="card" id="s12"><h2><span class="num">SLIDE 12</span>Huấn luyện Đợt 1 (Kaggle T4)<span class="chip">⏱ 45 giây</span></h2><p><strong>Lời thoại gợi ý:</strong></p>
-<blockquote>
-<p>Loss giảm từ 3,63 xuống khoảng 0,2–0,3 sau chừng 100 bước. Nhiệt độ τ tự học từ 0,07 xuống 0,021. Huấn luyện mất 155 phút trên T4.</p>
-</blockquote>
-<p><strong>Chuyển ý:</strong> "Kết quả hai đợt so với bài báo như sau."</p></section>
-<section class="card" id="s13"><h2><span class="num">SLIDE 13</span>Kết quả tái hiện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
+<p><strong>Chuyển ý:</strong> "Kết quả tái hiện như sau."</p></section>
+<section class="card" id="s11"><h2><span class="num">SLIDE 11</span>Kết quả tái hiện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
-<li>Đợt 2 đạt khoảng 97–99% bài báo, thấp hơn 0,7–2,3 điểm R@1.</li>
-<li>Đợt 1 thấp hơn do ít dữ liệu và batch nhỏ.</li>
+<li>Tái hiện đạt khoảng 97–99% bài báo, thấp hơn 0,7–2,3 điểm R@1.</li>
 <li>Linear head 803K tham số kém xa SLQ, khớp với Bảng 5 của bài báo.</li>
 </ul>
 <p><strong>Lời thoại gợi ý:</strong></p>
 <blockquote>
 <p>Hai dòng đầu là mốc đối chứng. Zero-shot lấy token cuối gần như ngẫu nhiên, khoảng 2%. Thêm một linear head 803 nghìn tham số lên token cuối cũng chỉ đạt 37%. Trong khi đó SLQ với khoảng 20 nghìn tham số đạt 60%. Điều này xác nhận vai trò của query.</p>
-<p>Đợt 1 trên T4 đạt 50,9 ở COCO I→T R@1. Đợt 2 trên A100 đạt 60,1, so với 61,2 của bài báo, tức khoảng 98%. Riêng Flickr I→T thấp hơn bài báo 2,3 điểm. Nhóm em coi như đã tái hiện thành công.</p>
+<p>Bản tái lập của nhóm em đạt 60,1 ở COCO I→T R@1, so với 61,2 của bài báo, tức khoảng 98%. Flickr I→T thấp hơn bài báo 2,3 điểm. Nhóm em coi như đã tái hiện thành công.</p>
 </blockquote>
 <p><strong>Chuyển ý:</strong> "Từ nền này, nhóm em thử cải tiến SLQ."</p></section>
-<section class="card" id="s14"><h2><span class="num">SLIDE 14</span>Bốn hướng cải tiến<span class="chip">⏱ 1 phút 30 giây</span></h2><p><strong>Ý chính:</strong> prefix steering, tiêm query ở tầng giữa (LQI), lấy nhiều tầng kèm residual (MR-4), query thích ứng (IAQ). Gộp lại thành AdaSLQ. Backbone vẫn đóng băng.</p>
+<section class="card" id="s12"><h2><span class="num">SLIDE 12</span>Bốn hướng cải tiến<span class="chip">⏱ 1 phút 30 giây</span></h2><p><strong>Ý chính:</strong> prefix steering, tiêm query ở tầng giữa (LQI), lấy nhiều tầng kèm residual (MR-4), query thích ứng (IAQ). Gộp lại thành AdaSLQ. Backbone vẫn đóng băng.</p>
 <p><strong>Lời thoại gợi ý:</strong></p>
 <blockquote>
 <p>Nhóm em thử bốn hướng.
@@ -198,7 +187,7 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 - <strong>Bốn, query thích ứng:</strong> query không cố định mà được sinh từ token cuối của tầng 11, nên mỗi ảnh hoặc câu có bộ query riêng.</p>
 <p>AdaSLQ là tổ hợp cả bốn, như sơ đồ bên trái. InternVL3 vẫn đóng băng 100%.</p>
 </blockquote></section>
-<section class="card" id="s15"><h2><span class="num">SLIDE 15</span>Ablation vị trí query<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<section class="card" id="s13"><h2><span class="num">SLIDE 13</span>Ablation vị trí query<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
 <li>Tiêm ở tầng 8–16 tăng khoảng 3,3 điểm và <strong>không tốn thêm tham số</strong>. Tầng 20 thì không giúp gì.</li>
 <li>5 query đầu + 15 query cuối là tốt nhất trong các tỉ lệ thử.</li>
@@ -209,7 +198,7 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <p>Biểu đồ trái: tiêm ở tầng 8, 12 hay 16 đều tăng khoảng 3 điểm so với tầng 1, và không thêm tham số nào. Tiêm muộn ở tầng 20 thì không còn đủ tầng để tổng hợp thông tin. Ba tầng 8, 12, 16 chênh nhau rất ít; nhóm em chọn tầng 12 vì chiều T→I tốt nhất.</p>
 <p>Biểu đồ phải: 5 query đầu cộng 15 query cuối tốt nhất, tăng khoảng 2 điểm. Cô lưu ý giúp em trục bắt đầu từ 58 nên chênh lệch trông lớn hơn thực tế.</p>
 </blockquote></section>
-<section class="card" id="s16"><h2><span class="num">SLIDE 16</span>Ablation trích xuất và thích ứng<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<section class="card" id="s14"><h2><span class="num">SLIDE 14</span>Ablation trích xuất và thích ứng<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
 <li>Lấy trung bình nhiều tầng không giúp. Cần head có học (residual) mới tăng, lên 64,94.</li>
 <li>Query thích ứng bằng MLP tăng khoảng 3 điểm. MoE thì gần như không giúp.</li>
@@ -219,7 +208,7 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <p>Bảng trái: nếu chỉ lấy trung bình 2 hay 4 tầng cuối thì kết quả gần như không đổi. Phải có một residual head học được thì mới tăng, lên 64,94. Đổi lại, head này tốn 3,2 triệu tham số.</p>
 <p>Bảng phải: sinh query theo từng đầu vào bằng MLP tăng từ 63,4 lên 66,3. Nhóm em cũng thử chọn query từ một "ngân hàng" kiểu Mixture-of-Experts, nhưng gần như không cải thiện.</p>
 </blockquote></section>
-<section class="card" id="s17"><h2><span class="num">SLIDE 17</span>AdaSLQ<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
+<section class="card" id="s15"><h2><span class="num">SLIDE 15</span>AdaSLQ<span class="chip">⏱ 1 phút</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
 <li>AdaSLQ đạt COCO I→T R@1 69,64, tức +9,5 so với SLQ tái lập. Flickr I→T đạt 91,0.</li>
 <li>Mỗi dòng "Chỉ…" là thí nghiệm riêng, không cộng dồn.</li>
@@ -231,27 +220,27 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <p>Cái giá phải trả là số tham số: 10,59 triệu, gấp khoảng 537 lần SLQ.</p>
 </blockquote>
 <p><strong>Chuyển ý:</strong> "Nhóm em muốn nói rõ một số điểm khi đánh giá kết quả này."</p></section>
-<section class="card" id="s18"><h2><span class="num">SLIDE 18</span>Đánh giá phản biện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
+<section class="card" id="s16"><h2><span class="num">SLIDE 16</span>Đánh giá phản biện<span class="chip">⏱ 1 phút 15 giây</span></h2><p><strong>Ý chính:</strong></p>
 <ul>
 <li>AdaSLQ nhiều tham số hơn cả LoRA 1B. LQI-12 là cải tiến "miễn phí".</li>
 <li>1 seed, chọn cấu hình trên tập test.</li>
 <li>Có thể trùng ảnh giữa COCO train và test.</li>
-<li>Với ít dữ liệu, head lớn còn kém hơn.</li>
+<li>Chưa so với LoRA trong cùng điều kiện.</li>
 </ul>
 <p><strong>Lời thoại gợi ý:</strong></p>
 <blockquote>
 <p>Thứ nhất, AdaSLQ có 10,6 triệu tham số, nhiều hơn cả LoRA bản 1B. Nó vẫn không làm hỏng backbone, nhưng không còn lợi thế "vài chục nghìn tham số". Nếu cần gọn nhẹ thì LQI-12 là lựa chọn tốt: không thêm tham số mà vẫn tăng 3,3 điểm.</p>
 <p>Thứ hai, mỗi cấu hình mới chạy một lần, và nhóm em chọn cấu hình tốt nhất dựa trên chính tập test. Vì vậy những chênh lệch dưới 0,5 điểm chưa đủ để kết luận.</p>
-<p>Thứ ba, COCO 2017 train có thể trùng ảnh với COCO 5K test, nhóm em chưa lọc. Cuối cùng, khi thử head nhiều tầng trên dữ liệu ít ở Kaggle, kết quả còn kém SLQ thường. Head lớn cần đủ dữ liệu.</p>
+<p>Thứ ba, COCO 2017 train có thể trùng ảnh với COCO 5K test, nhóm em chưa lọc. Cuối cùng, nhóm em chưa chạy LoRA hay fine-tune trong cùng điều kiện để so trực tiếp với AdaSLQ.</p>
 </blockquote></section>
-<section class="card" id="s19"><h2><span class="num">SLIDE 19</span>Kết luận<span class="chip">⏱ 45 giây</span></h2><p><strong>Lời thoại gợi ý:</strong></p>
+<section class="card" id="s17"><h2><span class="num">SLIDE 17</span>Kết luận<span class="chip">⏱ 45 giây</span></h2><p><strong>Lời thoại gợi ý:</strong></p>
 <blockquote>
-<p>Tóm lại, nhóm em đã phân tích bài báo, sửa code và tái hiện SLQ đạt khoảng 98% kết quả gốc. Nhóm em đề xuất AdaSLQ, tăng thêm 6–9 điểm. Hướng tiếp theo: tách tập validation, chạy nhiều seed, lọc ảnh trùng, thu nhỏ bộ sinh query, và thử trên dữ liệu tiếng Việt.</p>
+<p>Tóm lại, nhóm em đã phân tích bài báo, sửa code và tái hiện SLQ trên toàn bộ COCO, đạt khoảng 98% kết quả gốc. Nhóm em đề xuất AdaSLQ, tăng thêm 6–9 điểm. Hướng tiếp theo: tách tập validation, chạy nhiều seed, lọc ảnh trùng, thu nhỏ bộ sinh query, và thử trên dữ liệu tiếng Việt.</p>
 </blockquote></section>
-<section class="card" id="s20"><h2><span class="num">SLIDE 20</span>Cảm ơn và hỏi đáp<span class="chip">⏱ 10 giây</span></h2><blockquote>
+<section class="card" id="s18"><h2><span class="num">SLIDE 18</span>Cảm ơn và hỏi đáp<span class="chip">⏱ 10 giây</span></h2><blockquote>
 <p>Nhóm em xin cảm ơn cô và các bạn đã lắng nghe. Nhóm em rất mong nhận được câu hỏi và góp ý ạ.</p>
 </blockquote></section>
-<section class="card" id="p20"><h2>Phân công gợi ý</h2><div class="tbl"><table>
+<section class="card" id="p18"><h2>Phân công gợi ý</h2><div class="tbl"><table>
 <thead>
 <tr>
 <th>Phần</th>
@@ -274,20 +263,20 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <td>~4,5 phút</td>
 </tr>
 <tr>
-<td>Tái hiện: thiết lập, lỗi, huấn luyện, kết quả</td>
-<td>10–13</td>
+<td>Tái hiện: thiết lập và kết quả</td>
+<td>10–11</td>
 <td>Đỗ Nhật Minh</td>
-<td>~4 phút</td>
+<td>~2,5 phút</td>
 </tr>
 <tr>
 <td>Cải tiến: bốn hướng và ablation</td>
-<td>14–16</td>
+<td>12–14</td>
 <td>Nguyễn Minh Quang</td>
 <td>~3,5 phút</td>
 </tr>
 <tr>
 <td>AdaSLQ, phản biện, kết luận</td>
-<td>17–20</td>
+<td>15–18</td>
 <td>Trần Khánh Hưng</td>
 <td>~3 phút</td>
 </tr>
@@ -296,8 +285,8 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 <p>Quang là người chạy các thí nghiệm A100, nên nên trình bày phần cải tiến và trả lời câu hỏi kỹ thuật về phần này.</p>
 <h2>Mẹo khi trình bày</h2>
 <ul>
-<li><strong>Slide 5, 11, 14 và 18</strong> là nơi cô dễ hỏi nhất.</li>
-<li>Nói rõ số liệu Đợt 2 và AdaSLQ là <strong>chạy 1 lần</strong>, chọn trên tập test. Nói trước điều này thì tốt hơn để cô phát hiện ra.</li>
+<li><strong>Slide 5, 10, 12 và 16</strong> là nơi cô dễ hỏi nhất.</li>
+<li>Nói rõ số liệu tái lập và AdaSLQ là <strong>chạy 1 lần</strong>, chọn trên tập test. Nói trước điều này thì tốt hơn để cô phát hiện ra.</li>
 <li>Khi nhắc đến AdaSLQ, luôn nói kèm <strong>10,59M tham số</strong>.</li>
 <li>Mở sẵn file <code>bao_cao_SLQ.html</code> trên máy làm phương án dự phòng.</li>
 </ul></section>

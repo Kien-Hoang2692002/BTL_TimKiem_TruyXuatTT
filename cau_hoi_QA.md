@@ -77,11 +77,7 @@ Có. Với chỉ một đáp án đúng, MRR (Mean Reciprocal Rank) phản ánh 
 ## C. Phần tái hiện
 
 ### 17. ⭐ Nhóm đã tái hiện như thế nào?
-Nhóm tái hiện hai đợt:
-- **Đợt 1, Kaggle T4:** 20 nghìn cặp COCO, 1 epoch, batch 64, fp32, mất 155 phút. Mục tiêu là chạy được và sửa lỗi code gốc.
-- **Đợt 2, 4× A100:** toàn bộ COCO, 5 epoch, bf16, đúng cấu hình bài báo.
-
-Cả hai đợt đều đánh giá trên Flickr30K-1K và COCO-5K test.
+Nhóm chạy trên 4× A100 với đúng cấu hình bài báo: InternVL3-1B, 20 query, toàn bộ COCO 2017 train, 5 epoch, learning rate 5e-4, bf16, 1024 mẫu âm mỗi bước. Đánh giá trên Flickr30K-1K và COCO-5K test.
 
 ### 18. ⭐⭐ Code gốc có vấn đề gì?
 - Import package `internvl3` nhưng repo không có.
@@ -89,20 +85,17 @@ Cả hai đợt đều đánh giá trên Flickr30K-1K và COCO-5K test.
 - Mặc định 1 query và learning rate 1e-5, trong khi bài báo dùng 20 query và 5e-4.
 - Không công bố checkpoint; các đường dẫn để trống.
 
-Nhóm viết lại script nhưng giữ đúng tiền xử lý ảnh, prompt, vị trí query, mean pooling và loss.
+Nhóm viết lại script nhưng giữ đúng tiền xử lý ảnh, prompt, vị trí query, mean pooling và loss, rồi mở rộng thành `slq_multilayer.py` để chạy nhiều GPU.
 
 ### 19. ⭐⭐ Kết quả tái hiện so với bài báo thế nào?
-Đợt 2 (A100) đạt COCO I→T R@1 **60,10** so với 61,2 của bài báo, và COCO T→I R@1 **47,75** so với 48,5, tức khoảng 98%. Flickr I→T R@1 đạt 84,40, thấp hơn bài báo (86,7) 2,3 điểm. Riêng COCO I→T R@5 cao hơn một chút (85,12 so với 84,9).
+Nhóm đạt COCO I→T R@1 **60,10** so với 61,2 của bài báo, và COCO T→I R@1 **47,75** so với 48,5, tức khoảng 98%. Flickr I→T R@1 đạt 84,40, thấp hơn bài báo (86,7) 2,3 điểm. Riêng COCO I→T R@5 cao hơn một chút (85,12 so với 84,9).
 
-Đợt 1 (T4) thấp hơn, COCO I→T R@1 đạt 50,9, do ít dữ liệu và batch nhỏ.
+### 20. ⭐⭐⭐ Làm sao chắc script của nhóm đúng với phương pháp gốc?
+- So từng bước với `train_internvl_slq.py` và `eval_internvl_on_coco.py` của tác giả: pad ảnh thành hình vuông màu xám, resize 448, 256 token ảnh, cùng template prompt, query gắn cuối, mean pooling, loss chia cho `logit_scale` khởi tạo 0,07.
+- Kết quả đạt khoảng 98% bài báo. Nếu sai phương pháp thì khó đạt mức này.
 
-### 20. ⭐⭐⭐ Vì sao lần chạy đầu ra 0,1%? Làm sao phát hiện?
-Kết quả 0,1% đúng bằng mức đoán ngẫu nhiên, và Image→Text ra **giống hệt nhau** trước và sau huấn luyện. Điều đó cho thấy embedding bị hỏng chứ không phải mô hình học kém. Chuyển từ fp16 sang fp32 trên T4 thì hết lỗi.
-
-Nhóm chưa tái hiện được NaN khi chạy fp16 trên CPU, nên nguyên nhân chính xác **chưa được chứng minh hoàn toàn**. Nhóm đã thêm bước kiểm tra NaN tự động vào code.
-
-### 21. ⭐⭐ Vì sao Đợt 1 dùng fp32 còn Đợt 2 dùng bf16?
-GPU T4 không hỗ trợ bf16 bằng phần cứng, và fp16 gây lỗi như câu 20, nên Đợt 1 phải dùng fp32. A100 hỗ trợ bf16, giống bài báo, nên Đợt 2 dùng bf16.
+### 21. ⭐⭐ "FlashAttention2 is not installed" có ảnh hưởng không?
+Không ảnh hưởng đến kết quả, vì FlashAttention chỉ là cách tính attention nhanh hơn. Nhóm dùng attention thường (eager), vì FlashAttention-2 gây sai khi chuỗi văn bản được đệm bên trái (left padding).
 
 ### 22. ⭐⭐⭐ Bài báo ghi khoảng 36K tham số, nhóm ra 17.921. Ai sai?
 Theo code tác giả công bố, tham số học được là `meta_queries` (20 × 896 = 17.920) cộng `logit_scale` (1), tức 17.921. Các biến thể tiêm query ở tầng giữa của nhóm có thêm một LayerNorm (2 × 896 = 1.792), thành 19,7K. Nhóm không tìm thấy thành phần nào để ra 36K. Có thể tác giả tính theo cấu hình khác, hoặc con số trong bài bị nhầm.
@@ -110,15 +103,15 @@ Theo code tác giả công bố, tham số học được là `meta_queries` (20
 ### 23. ⭐⭐ Linear head có 803K tham số, sao lại kém SLQ nhiều vậy?
 Linear head chỉ biến đổi **một vector** là token cuối. Vector đó vốn đã bị nút thắt thông tin, nên thêm bao nhiêu tham số phía sau cũng không lấy lại được thông tin đã mất. Query thì hoạt động **bên trong** MLLM, dùng attention để tự chọn thông tin cần lấy. Điều này khớp với ablation trong Bảng 5 của bài báo.
 
-### 24. ⭐⭐ Zero-shot dao động giữa các lần chạy là vì sao?
-Zero-shot với query ngẫu nhiên phụ thuộc vào cách khởi tạo, và khi đánh giá không cố định seed. Trên Kaggle, hai lần chạy cho Flickr T→I R@1 là 3,8 và 7,2. Zero-shot dùng last token (không có query) thì ổn định, khoảng 2–4%.
+### 24. ⭐⭐ Zero-shot last token chỉ đạt khoảng 2%. Có phải code sai không?
+Không. Token cuối của MLLM được huấn luyện để dự đoán từ tiếp theo, không phải để làm embedding truy xuất, nên khi chưa học gì thì vector của ảnh và văn bản chưa nằm cùng không gian. Bài báo cũng chỉ ra last token bị nút thắt thông tin. Con số này đóng vai trò mốc sàn.
 
 ### 25. ⭐⭐⭐ Ảnh COCO 2017 train có trùng với COCO 5K test (Karpathy) không?
 Có khả năng. COCO 2017 train gồm 2014 train cộng phần lớn 2014 val, còn Karpathy test lấy 5000 ảnh từ 2014 val. Nhóm **chưa kiểm tra**. Nếu có trùng, kết quả COCO có thể cao hơn thực tế một chút. Cách khắc phục là lọc theo `cocoid` hoặc dùng Karpathy train split. Kết quả Flickr không bị ảnh hưởng.
 
 Điều này ảnh hưởng như nhau tới baseline và AdaSLQ, nên so sánh tương đối giữa các cấu hình vẫn có ý nghĩa.
 
-### 26. ⭐⭐ Batch "1024" trong Đợt 2 có đúng nghĩa như bài báo không?
+### 26. ⭐⭐ Batch "1024" của nhóm có đúng nghĩa như bài báo không?
 Cần phân biệt. Số mẫu âm trong InfoNCE bằng batch trên mỗi GPU nhân số GPU, vì embedding được gom (all_gather) giữa các GPU. Tích lũy gradient (grad_accum) giúp batch hiệu dụng lớn hơn cho bước cập nhật, **nhưng không tăng số mẫu âm**. Cấu hình batch 256 trên mỗi GPU × 4 GPU thì có 1024 mẫu âm, tương đương bài báo.
 
 ---
@@ -156,8 +149,8 @@ Nếu cần gọn nhẹ, LQI-12 là lựa chọn tốt nhất: 19,7K tham số m
 ### 33. ⭐⭐ MoE query pool là gì? Sao không hiệu quả?
 Ý tưởng là có một "ngân hàng" 30 hoặc 60 query; với mỗi đầu vào, một bộ định tuyến chọn 15 query phù hợp, cộng 5 query dùng chung. Kết quả chỉ đạt 63,28–63,74, gần như bằng LQI-12 tĩnh (63,40). Có thể do việc chọn rời rạc khó học hơn so với sinh liên tục bằng MLP. Nhóm chưa phân tích sâu hơn.
 
-### 34. ⭐⭐ Thử cải tiến trên Kaggle (dữ liệu ít) thì sao?
-Head nhiều tầng với MLP trên 20 nghìn cặp cho Flickr I→T R@1 = 72,7, **thấp hơn** SLQ thường (75,7) trong cùng điều kiện. Kết luận: head lớn cần đủ dữ liệu. Với dữ liệu ít, SLQ gốc an toàn hơn.
+### 34. ⭐⭐ Các cải tiến có cần nhiều dữ liệu không?
+Có khả năng. LQI và prefix gần như không thêm tham số nên ít phụ thuộc dữ liệu. MR-4 (3,23M) và bộ sinh query (khoảng 9,6M) thì nhiều tham số hơn hẳn, nên nếu dữ liệu ít sẽ dễ overfit. Nhóm chỉ thử trên toàn bộ COCO, chưa khảo sát theo lượng dữ liệu.
 
 ---
 
@@ -166,7 +159,7 @@ Head nhiều tầng với MLP trên 20 nghìn cặp cho Flickr I→T R@1 = 72,7,
 ### 35. ⭐⭐ Điểm mạnh và yếu của SLQ?
 **Mạnh:**
 - Cực ít tham số, huấn luyện nhanh, không làm hỏng mô hình gốc.
-- Mỗi tác vụ chỉ cần lưu một bộ query vài chục KB. File của nhóm chỉ 73 KB.
+- Mỗi tác vụ chỉ cần lưu một bộ query vài chục KB.
 
 **Yếu:**
 - Khi suy luận vẫn phải chạy cả MLLM, chậm hơn nhiều so với CLIP.
@@ -189,7 +182,7 @@ Về nguyên lý là có, vì Qwen2 trong InternVL3 có hỗ trợ tiếng Việ
 | Câu hỏi | Ý trả lời |
 |---|---|
 | "Mô hình có bị thay đổi gì không?" | Không. 100% trọng số InternVL3 giữ nguyên, kể cả trong AdaSLQ. |
-| "20 query là 20 mẫu dữ liệu à?" | Không. 20 query là 20 vector tham số. Dữ liệu huấn luyện là toàn bộ COCO (Đợt 2). |
+| "20 query là 20 mẫu dữ liệu à?" | Không. 20 query là 20 vector tham số. Dữ liệu huấn luyện là toàn bộ COCO. |
 | "Tái hiện có đạt bài báo không?" | Đạt khoảng 98% ở COCO; Flickr I→T thấp hơn 2,3 điểm. |
 | "AdaSLQ có vượt bài báo không?" | Có, khoảng +4 đến +8 điểm R@1, nhưng dùng 10,59M tham số, 1 seed, chọn trên tập test. |
 | "Cải tiến nào đáng giá nhất?" | LQI-12: không thêm tham số mà tăng 3,3 điểm. |

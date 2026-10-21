@@ -1,7 +1,7 @@
 # Kịch bản thuyết trình: SLQ và AdaSLQ
 
-- **Slide:** `bao_cao_SLQ.html`, 20 slide, gồm 3 phần: bài báo (1–9), tái hiện (10–13), cải tiến của nhóm (14–19).
-- **Thời lượng gợi ý:** 20–22 phút trình bày và 5–10 phút hỏi đáp
+- **Slide:** `bao_cao_SLQ.html`, 18 slide, gồm 3 phần: bài báo (1–9), tái hiện (10–11), cải tiến của nhóm (12–17).
+- **Thời lượng gợi ý:** 18–20 phút trình bày và 5–10 phút hỏi đáp
 - **Điều khiển:** phím ← → hoặc Space để chuyển slide, phím F để bật toàn màn hình
 - **Phân công gợi ý:** 5 người (xem bảng cuối file). Nhóm tự chỉnh lại cho phù hợp.
 
@@ -119,63 +119,42 @@
 
 ---
 
-## Slide 10: Hai đợt tái hiện
-**Thời gian:** 1 phút
-
-**Ý chính:**
-- Đợt 1 trên Kaggle T4: 20k cặp, 1 epoch, fp32, nhằm chạy được và sửa lỗi.
-- Đợt 2 trên 4× A100: toàn bộ COCO, 5 epoch, bf16, đúng cấu hình bài báo.
-- Mô hình học 17.921 tham số, hoặc 19,7K khi có thêm LayerNorm.
-
-**Lời thoại gợi ý:**
-> Nhóm em tái hiện hai đợt. Đợt 1 dùng GPU T4 miễn phí của Kaggle, quy mô nhỏ, mục tiêu là chạy được và tìm lỗi. Đợt 2 dùng 4 GPU A100, chạy đúng cấu hình bài báo: toàn bộ COCO, 5 epoch, bf16. Đợt 2 vừa để so sánh công bằng với bài báo, vừa làm nền cho các cải tiến.
->
-> Số tham số đo được là 17.921, tức 20 nhân 896 cộng 1. Bài báo ghi khoảng 36 nghìn, nhưng code tác giả công bố chỉ ra được khoảng 18 nghìn.
-
-**Chuyển ý:** "Ngay từ Đợt 1, nhóm em đã gặp khá nhiều trục trặc."
-
----
-
-## Slide 11: Lỗi khi tái hiện
-**Thời gian:** 1 phút 15 giây
-
-**Ý chính:** code gốc không chạy được ngay. Lỗi fp16 làm kết quả chỉ còn 0,1%.
-
-**Lời thoại gợi ý:**
-> Code tác giả import một package không có trong repo, dòng tạo query bị comment, và cấu hình mặc định khác bài báo. Nhóm em viết lại một script giữ đúng logic gốc.
->
-> Lần chạy đầu cho kết quả **0,1%**, ngang đoán bừa, kể cả sau khi huấn luyện. Chuyển từ fp16 sang fp32 trên T4 thì hết lỗi. Bài học: luôn so với mức ngẫu nhiên để phát hiện lỗi. Nhóm em đã thêm bước tự kiểm tra NaN vào code.
-
----
-
-## Slide 12: Huấn luyện Đợt 1 (Kaggle T4)
-**Thời gian:** 45 giây
-
-**Lời thoại gợi ý:**
-> Loss giảm từ 3,63 xuống khoảng 0,2–0,3 sau chừng 100 bước. Nhiệt độ τ tự học từ 0,07 xuống 0,021. Huấn luyện mất 155 phút trên T4.
-
-**Chuyển ý:** "Kết quả hai đợt so với bài báo như sau."
-
----
-
-## Slide 13: Kết quả tái hiện
+## Slide 10: Thiết lập tái hiện
 **Thời gian:** 1 phút 15 giây
 
 **Ý chính:**
-- Đợt 2 đạt khoảng 97–99% bài báo, thấp hơn 0,7–2,3 điểm R@1.
-- Đợt 1 thấp hơn do ít dữ liệu và batch nhỏ.
+- Chạy đúng cấu hình bài báo: toàn bộ COCO, 5 epoch, bf16, 4× A100, 1024 mẫu âm.
+- Mô hình học 17.921 tham số (19,7K khi có thêm LayerNorm). Bài báo ghi ~36K.
+- Code gốc không chạy được ngay; nhóm sửa và mở rộng thành `slq_multilayer.py`.
+
+**Lời thoại gợi ý:**
+> Nhóm em tái hiện trên 4 GPU A100, giữ đúng cấu hình bài báo: InternVL3-1B, 20 query, toàn bộ COCO, 5 epoch, learning rate 5e-4, bf16. Mỗi GPU xử lý 256 mẫu và embedding được gom giữa 4 GPU, nên mỗi bước có 1024 mẫu âm như bài báo.
+>
+> Số tham số đo được là 17.921, tức 20 nhân 896 cộng 1. Bài báo ghi khoảng 36 nghìn, nhưng code công bố chỉ ra khoảng 18 nghìn.
+>
+> Code tác giả không chạy được ngay: thiếu package, dòng tạo query bị comment, cấu hình mặc định khác bài báo. Nhóm em viết lại giữ đúng logic gốc, sau đó mở rộng để chạy nhiều GPU và thử các cải tiến.
+
+**Chuyển ý:** "Kết quả tái hiện như sau."
+
+---
+
+## Slide 11: Kết quả tái hiện
+**Thời gian:** 1 phút 15 giây
+
+**Ý chính:**
+- Tái hiện đạt khoảng 97–99% bài báo, thấp hơn 0,7–2,3 điểm R@1.
 - Linear head 803K tham số kém xa SLQ, khớp với Bảng 5 của bài báo.
 
 **Lời thoại gợi ý:**
 > Hai dòng đầu là mốc đối chứng. Zero-shot lấy token cuối gần như ngẫu nhiên, khoảng 2%. Thêm một linear head 803 nghìn tham số lên token cuối cũng chỉ đạt 37%. Trong khi đó SLQ với khoảng 20 nghìn tham số đạt 60%. Điều này xác nhận vai trò của query.
 >
-> Đợt 1 trên T4 đạt 50,9 ở COCO I→T R@1. Đợt 2 trên A100 đạt 60,1, so với 61,2 của bài báo, tức khoảng 98%. Riêng Flickr I→T thấp hơn bài báo 2,3 điểm. Nhóm em coi như đã tái hiện thành công.
+> Bản tái lập của nhóm em đạt 60,1 ở COCO I→T R@1, so với 61,2 của bài báo, tức khoảng 98%. Flickr I→T thấp hơn bài báo 2,3 điểm. Nhóm em coi như đã tái hiện thành công.
 
 **Chuyển ý:** "Từ nền này, nhóm em thử cải tiến SLQ."
 
 ---
 
-## Slide 14: Bốn hướng cải tiến
+## Slide 12: Bốn hướng cải tiến
 **Thời gian:** 1 phút 30 giây
 
 **Ý chính:** prefix steering, tiêm query ở tầng giữa (LQI), lấy nhiều tầng kèm residual (MR-4), query thích ứng (IAQ). Gộp lại thành AdaSLQ. Backbone vẫn đóng băng.
@@ -191,7 +170,7 @@
 
 ---
 
-## Slide 15: Ablation vị trí query
+## Slide 13: Ablation vị trí query
 **Thời gian:** 1 phút
 
 **Ý chính:**
@@ -206,7 +185,7 @@
 
 ---
 
-## Slide 16: Ablation trích xuất và thích ứng
+## Slide 14: Ablation trích xuất và thích ứng
 **Thời gian:** 1 phút
 
 **Ý chính:**
@@ -220,7 +199,7 @@
 
 ---
 
-## Slide 17: AdaSLQ
+## Slide 15: AdaSLQ
 **Thời gian:** 1 phút
 
 **Ý chính:**
@@ -237,33 +216,33 @@
 
 ---
 
-## Slide 18: Đánh giá phản biện
+## Slide 16: Đánh giá phản biện
 **Thời gian:** 1 phút 15 giây
 
 **Ý chính:**
 - AdaSLQ nhiều tham số hơn cả LoRA 1B. LQI-12 là cải tiến "miễn phí".
 - 1 seed, chọn cấu hình trên tập test.
 - Có thể trùng ảnh giữa COCO train và test.
-- Với ít dữ liệu, head lớn còn kém hơn.
+- Chưa so với LoRA trong cùng điều kiện.
 
 **Lời thoại gợi ý:**
 > Thứ nhất, AdaSLQ có 10,6 triệu tham số, nhiều hơn cả LoRA bản 1B. Nó vẫn không làm hỏng backbone, nhưng không còn lợi thế "vài chục nghìn tham số". Nếu cần gọn nhẹ thì LQI-12 là lựa chọn tốt: không thêm tham số mà vẫn tăng 3,3 điểm.
 >
 > Thứ hai, mỗi cấu hình mới chạy một lần, và nhóm em chọn cấu hình tốt nhất dựa trên chính tập test. Vì vậy những chênh lệch dưới 0,5 điểm chưa đủ để kết luận.
 >
-> Thứ ba, COCO 2017 train có thể trùng ảnh với COCO 5K test, nhóm em chưa lọc. Cuối cùng, khi thử head nhiều tầng trên dữ liệu ít ở Kaggle, kết quả còn kém SLQ thường. Head lớn cần đủ dữ liệu.
+> Thứ ba, COCO 2017 train có thể trùng ảnh với COCO 5K test, nhóm em chưa lọc. Cuối cùng, nhóm em chưa chạy LoRA hay fine-tune trong cùng điều kiện để so trực tiếp với AdaSLQ.
 
 ---
 
-## Slide 19: Kết luận
+## Slide 17: Kết luận
 **Thời gian:** 45 giây
 
 **Lời thoại gợi ý:**
-> Tóm lại, nhóm em đã phân tích bài báo, sửa code và tái hiện SLQ đạt khoảng 98% kết quả gốc. Nhóm em đề xuất AdaSLQ, tăng thêm 6–9 điểm. Hướng tiếp theo: tách tập validation, chạy nhiều seed, lọc ảnh trùng, thu nhỏ bộ sinh query, và thử trên dữ liệu tiếng Việt.
+> Tóm lại, nhóm em đã phân tích bài báo, sửa code và tái hiện SLQ trên toàn bộ COCO, đạt khoảng 98% kết quả gốc. Nhóm em đề xuất AdaSLQ, tăng thêm 6–9 điểm. Hướng tiếp theo: tách tập validation, chạy nhiều seed, lọc ảnh trùng, thu nhỏ bộ sinh query, và thử trên dữ liệu tiếng Việt.
 
 ---
 
-## Slide 20: Cảm ơn và hỏi đáp
+## Slide 18: Cảm ơn và hỏi đáp
 **Thời gian:** 10 giây
 
 > Nhóm em xin cảm ơn cô và các bạn đã lắng nghe. Nhóm em rất mong nhận được câu hỏi và góp ý ạ.
@@ -276,14 +255,14 @@
 |---|---|---|---|
 | Mở đầu, bài toán, động lực | 1–4 | Hoàng Văn Kiên | ~3,5 phút |
 | Phương pháp SLQ, KARR-Bench, kết quả bài báo | 5–9 | Nguyễn Thị Quỳnh Trang | ~4,5 phút |
-| Tái hiện: thiết lập, lỗi, huấn luyện, kết quả | 10–13 | Đỗ Nhật Minh | ~4 phút |
-| Cải tiến: bốn hướng và ablation | 14–16 | Nguyễn Minh Quang | ~3,5 phút |
-| AdaSLQ, phản biện, kết luận | 17–20 | Trần Khánh Hưng | ~3 phút |
+| Tái hiện: thiết lập và kết quả | 10–11 | Đỗ Nhật Minh | ~2,5 phút |
+| Cải tiến: bốn hướng và ablation | 12–14 | Nguyễn Minh Quang | ~3,5 phút |
+| AdaSLQ, phản biện, kết luận | 15–18 | Trần Khánh Hưng | ~3 phút |
 
 Quang là người chạy các thí nghiệm A100, nên nên trình bày phần cải tiến và trả lời câu hỏi kỹ thuật về phần này.
 
 ## Mẹo khi trình bày
-- **Slide 5, 11, 14 và 18** là nơi cô dễ hỏi nhất.
-- Nói rõ số liệu Đợt 2 và AdaSLQ là **chạy 1 lần**, chọn trên tập test. Nói trước điều này thì tốt hơn để cô phát hiện ra.
+- **Slide 5, 10, 12 và 16** là nơi cô dễ hỏi nhất.
+- Nói rõ số liệu tái lập và AdaSLQ là **chạy 1 lần**, chọn trên tập test. Nói trước điều này thì tốt hơn để cô phát hiện ra.
 - Khi nhắc đến AdaSLQ, luôn nói kèm **10,59M tham số**.
 - Mở sẵn file `bao_cao_SLQ.html` trên máy làm phương án dự phòng.
